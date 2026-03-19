@@ -104,6 +104,10 @@ window._bootAuth = async function () {
     window._updateAuthUI();
     window._startDataListeners();
     window.hideLoginScreen();
+    // Track presence
+    if (typeof window._fbSetPresence === 'function') {
+      window._fbSetPresence({ nombre: userData.nombre || userData.email, role: userData.role || 'usuario', uid: session.uid });
+    }
   } catch (e) {
     // DB unreachable — allow offline with cached session
     window._AUTH.currentUser = { uid: session.uid };
@@ -203,6 +207,10 @@ window.handleLogin = async function () {
     window._updateAuthUI();
     window._startDataListeners();
     window.hideLoginScreen();
+    // Track presence
+    if (typeof window._fbSetPresence === 'function') {
+      window._fbSetPresence({ nombre: match.nombre || match.email, role: match.role || 'usuario', uid: matchUid });
+    }
 
   } catch (e) {
     btn.disabled = false;
@@ -230,6 +238,8 @@ window.loginKeydown = function (e) {
 
 window.handleLogout = async function () {
   if (!confirm('¿Cerrar sesión?')) return;
+  // Clear presence before logout
+  if (typeof window._fbClearPresence === 'function') window._fbClearPresence();
   _clearSession();
   window._AUTH.currentUser = null;
   window._AUTH.userData    = null;
