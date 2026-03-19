@@ -212,29 +212,28 @@ window.homeGoToMyLocation = function () {
 
   // ── IP-based approximate location fallback ──
   function _flyToIPLocation() {
+    function _restoreBtn() { if (btn) btn.style.opacity = '1'; }
+    function _flyApprox(lat, lng) {
+      if (homeMapInstance) homeMapInstance.flyTo([lat, lng], 12, { animate: true, duration: 1.2 });
+      window.showNotif('⚠️ No se pudo obtener tu ubicación exacta — esta es tu ubicación aproximada');
+      _restoreBtn();
+    }
+    function _tryFreeIP() {
+      fetch('https://freeipapi.com/api/json')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.latitude && d.longitude) { _flyApprox(d.latitude, d.longitude); }
+          else { window.showNotif('No se pudo determinar tu ubicación'); _restoreBtn(); }
+        })
+        .catch(function () { window.showNotif('No se pudo determinar tu ubicación'); _restoreBtn(); });
+    }
     fetch('https://ipapi.co/json/')
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d && d.latitude && d.longitude) {
-          if (homeMapInstance) homeMapInstance.flyTo([d.latitude, d.longitude], 12, { animate: true, duration: 1.2 });
-          window.showNotif('⚠️ No se pudo obtener tu ubicación exacta — esta es tu ubicación aproximada');
-        } else { throw new Error('no coords'); }
+        if (d && d.latitude && d.longitude) { _flyApprox(d.latitude, d.longitude); }
+        else { _tryFreeIP(); }
       })
-      .catch(function () {
-        // Second fallback: freeipapi.com
-        fetch('https://freeipapi.com/api/json')
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            if (d && d.latitude && d.longitude) {
-              if (homeMapInstance) homeMapInstance.flyTo([d.latitude, d.longitude], 12, { animate: true, duration: 1.2 });
-              window.showNotif('⚠️ No se pudo obtener tu ubicación exacta — esta es tu ubicación aproximada');
-            } else {
-              window.showNotif('No se pudo determinar tu ubicación');
-            }
-          })
-          .catch(function () { window.showNotif('No se pudo determinar tu ubicación'); });
-      })
-      .finally(function () { if (btn) btn.style.opacity = '1'; });
+      .catch(function () { _tryFreeIP(); });
   }
 
   if (!navigator.geolocation) {
