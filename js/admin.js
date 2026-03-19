@@ -4,7 +4,10 @@
 
 window._allUsersCache = {};
 window._editingClientsUid = null;
-window._adminCurrentTab = 'users'; // 'users' | 'settings'
+window._adminCurrentTab = 'users'; // 'users' | 'settings' | 'clientes'
+window._adminNotifUnsub = null;   // realtime notifs listener
+window._adminNotifCount = 0;
+window._adminChatClient = null;   // clientKey of open admin chat
 
 /* ─────────────────────────────────────────
    OPEN / CLOSE ADMIN PANEL
@@ -46,28 +49,41 @@ window.renderAdminPanel = async function () {
 
   var html = '';
 
-  // ── Tab bar (programador only gets Settings + Servers tabs) ──
-  if (myRole === 'programador') {
+  // ── Tab bar ──
+  if (myRole === 'programador' || myRole === 'admin') {
     var tabs = [
-      { id: 'users',    label: '👥 Usuarios',       color: '#0f3320' },
-      { id: 'settings', label: '⚙️ Config',          color: '#7c3aed' },
-      { id: 'servers',  label: '🖥️ Servidores',     color: '#1d4ed8' }
+      { id: 'users',    label: '👥 Usuarios',   color: '#0f3320' },
+      { id: 'clientes', label: '🏢 Clientes',   color: '#0ea5e9' }
     ];
+    if (myRole === 'programador') {
+      tabs.push({ id: 'settings', label: '⚙️ Config',    color: '#7c3aed' });
+      tabs.push({ id: 'servers',  label: '🖥️ Servidores', color: '#1d4ed8' });
+    }
     html += '<div style="display:flex;border-bottom:1px solid #e5e0d8;margin-bottom:16px;overflow-x:auto">';
     tabs.forEach(function (t) {
       var active = window._adminCurrentTab === t.id;
-      html += '<button onclick="adminSetTab(\'' + t.id + '\')" style="flex:1;min-width:80px;padding:10px 6px;border:none;background:none;font-family:\'IBM Plex Sans\',sans-serif;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;color:' + (active ? t.color : '#9ca3af') + ';border-bottom:2px solid ' + (active ? t.color : 'transparent') + '">' + t.label + '</button>';
+      var label  = t.label;
+      // Notification badge on Clientes tab
+      if (t.id === 'clientes' && window._adminNotifCount > 0) {
+        label += ' <span style="background:#b91c1c;color:#fff;font-size:9px;padding:1px 5px;border-radius:20px;font-weight:800;">' + window._adminNotifCount + '</span>';
+      }
+      html += '<button onclick="adminSetTab(\'' + t.id + '\')" style="flex:1;min-width:80px;padding:10px 6px;border:none;background:none;font-family:\'IBM Plex Sans\',sans-serif;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;color:' + (active ? t.color : '#9ca3af') + ';border-bottom:2px solid ' + (active ? t.color : 'transparent') + '">' + label + '</button>';
     });
     html += '</div>';
   }
 
-  if (window._adminCurrentTab === 'servers' && myRole === 'programador') {
+  if (window._adminCurrentTab === 'clientes' && (myRole === 'admin' || myRole === 'programador')) {
+    html += renderClientesTab(myRole);
+  } else if (window._adminCurrentTab === 'servers' && myRole === 'programador') {
     html += renderServersTab();
   } else if (window._adminCurrentTab === 'settings' && myRole === 'programador') {
     html += renderSettingsTab();
   } else {
     html += renderUsersTab(users, myRole, clienteList);
   }
+
+  // Start notif listener if not already running
+  _adminStartNotifListener();
 
   body.innerHTML = html;
 };
@@ -248,6 +264,220 @@ function renderUsersTab(users, myRole, clienteList) {
 
   return html;
 }
+
+/* ─────────────────────────────────────────
+   CLIENTES TAB (admin + programador)
+───────────────────────────────────────── */
+
+function renderClientesTab(myRole) {
+  var rawAll = window._fbRawAll || window._dbAll || {};
+  var evalsByClient = {};
+  Object.values(rawAll).forEach(function (d) {
+    var c = d.cliente || '(Sin cliente)';
+    evalsByClient[c] = (evalsByClient[c] || 0) + 1;
+  });
+
+  var clientNames = [];
+  Object.values(window._clientesAll || {}).forEach(function (c) {
+    if (c.nombre && clientNames.indexOf(c.nombre) === -1) clientNames.push(c.nombre);
+  });
+  Object.keys(evalsByClient).forEach(function (c) {
+    if (c !== '(Sin cliente)' && clientNames.indexOf(c) === -1) clientNames.push(c);
+  });
+  clientNames.sort();
+
+  // Count unread messages per client
+  var unreadByClient = {};
+  // We use cached notifs
+  Object.values(window._adminNotifsCache || {}).forEach(function (n) {
+    if (!n.read && n.clienteKey) {
+      unreadByClient[n.clienteKey] = (unreadByClient[n.clienteKey] || 0) + 1;
+    }
+  });
+
+  var html = '<div style="padding:4px 0;">';
+  html += '<div style="font-weight:700;font-size:15px;color:#0f3320;margin-bottom:14px;">🏢 Gestión de Portales de Clientes</div>';
+
+  if (clientNames.length === 0) {
+    html += '<div style="background:#f9fafb;border-radius:12px;padding:24px;text-align:center;color:#9ca3af;font-size:13px;">No hay clientes registrados. Agrega evaluaciones con un cliente asignado.</div>';
+  } else {
+    clientNames.forEach(function (c) {
+      var n = evalsByClient[c] || 0;
+      var ck = (c || 'sin_cliente').replace(/[.#$[\]/]/g, '_');
+      var unread = unreadByClient[ck] || 0;
+      html +=
+        '<div style="background:#fff;border:1.5px solid #e5e0d8;border-radius:14px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px;">' +
+          '<div style="width:42px;height:42px;border-radius:12px;background:#e0f2fe;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🌳</div>' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="font-weight:700;font-size:14px;color:#0f3320;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escH(c) + '</div>' +
+            '<div style="font-size:11px;color:#9ca3af;">' + n + ' árbol(es) evaluado(s)</div>' +
+          '</div>' +
+          (unread > 0 ?
+            '<span style="background:#b91c1c;color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;flex-shrink:0;">💬 ' + unread + '</span>' : '') +
+          '<button onclick="window.openPortalConfigEditor(' + JSON.stringify(c) + ')" ' +
+            'style="flex-shrink:0;padding:8px 14px;background:#0f3320;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;white-space:nowrap;">⚙️ Configurar</button>' +
+          (unread > 0 ?
+            '<button onclick="adminOpenChat(\'' + ck + '\',\'' + escH(c) + '\')" ' +
+              'style="flex-shrink:0;padding:8px 14px;background:#b91c1c;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;white-space:nowrap;">💬 Ver</button>' : '') +
+        '</div>';
+    });
+  }
+
+  html += '</div>';
+
+  // Admin chat panel (shows when adminOpenChat is called)
+  html += '<div id="adminChatPanel" style="display:none;margin-top:10px;background:#f0f9ff;border:2px solid #0ea5e9;border-radius:14px;overflow:hidden;">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#0ea5e9;">' +
+      '<div id="adminChatPanelTitle" style="font-weight:700;font-size:13px;color:#fff;">💬 Chat con cliente</div>' +
+      '<button onclick="adminCloseChat()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:16px;width:28px;height:28px;border-radius:50%;cursor:pointer;">✕</button>' +
+    '</div>' +
+    '<div id="adminChatMsgs" style="height:220px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:4px;background:#fff;"></div>' +
+    '<div style="border-top:1px solid #e5e7eb;padding:10px;background:#fff;display:flex;gap:8px;">' +
+      '<textarea id="adminChatInput" placeholder="Escribe tu respuesta…" ' +
+        'style="flex:1;padding:8px 10px;border:1.5px solid #d1d5db;border-radius:10px;font-family:\'IBM Plex Sans\',sans-serif;font-size:12px;resize:none;min-height:38px;max-height:80px;outline:none;" ' +
+        'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();adminSendChatMsg();}"></textarea>' +
+      '<button onclick="adminSendChatMsg()" ' +
+        'style="padding:8px 14px;background:#0ea5e9;color:#fff;border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;">Enviar</button>' +
+    '</div>' +
+  '</div>';
+
+  return html;
+}
+
+/* ─────────────────────────────────────────
+   ADMIN NOTIFICATIONS LISTENER
+───────────────────────────────────────── */
+
+window._adminNotifsCache = {};
+
+function _adminStartNotifListener() {
+  if (window._adminNotifUnsub) return; // already listening
+  if (typeof window._fbOnNotifs !== 'function') return;
+  window._adminNotifUnsub = window._fbOnNotifs(function (snap) {
+    var notifs = (snap && snap.val ? snap.val() : null) || {};
+    window._adminNotifsCache = notifs;
+    window._adminNotifCount = Object.values(notifs).filter(function (n) { return !n.read; }).length;
+    // Update badge in tab bar if visible
+    var tabBtns = document.querySelectorAll('[onclick*="adminSetTab"]');
+    tabBtns.forEach(function (btn) {
+      if (btn.textContent.indexOf('Clientes') !== -1 || btn.innerHTML.indexOf('Clientes') !== -1) {
+        // Re-render panel header to update badge
+        // Lightweight: just update inner HTML of the clientes button
+        var inner = '🏢 Clientes';
+        if (window._adminNotifCount > 0) {
+          inner += ' <span style="background:#b91c1c;color:#fff;font-size:9px;padding:1px 5px;border-radius:20px;font-weight:800;">' + window._adminNotifCount + '</span>';
+        }
+        btn.innerHTML = inner;
+      }
+    });
+    // If chat panel is open for this client, refresh messages
+    if (window._adminChatClient) {
+      _renderAdminChatMessages(window._adminChatClient);
+    }
+  });
+}
+
+/* ─────────────────────────────────────────
+   ADMIN CHAT
+───────────────────────────────────────── */
+
+var _adminChatUnsub = null;
+
+window.adminOpenChat = function (clientKey, clientName) {
+  window._adminChatClient = clientKey;
+  var panel     = document.getElementById('adminChatPanel');
+  var titleEl   = document.getElementById('adminChatPanelTitle');
+  if (!panel) return;
+  if (titleEl) titleEl.textContent = '💬 Chat con ' + clientName;
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  // Mark notifs as read
+  Object.entries(window._adminNotifsCache || {}).forEach(function (entry) {
+    if (!entry[1].read && entry[1].clienteKey === clientKey) {
+      if (typeof window._fbMarkNotifRead === 'function') window._fbMarkNotifRead(entry[0]);
+    }
+  });
+
+  // Subscribe to chat messages
+  if (_adminChatUnsub) try { _adminChatUnsub(); } catch(e){}
+  if (typeof window._fbOnChat === 'function') {
+    _adminChatUnsub = window._fbOnChat(clientKey, function (snap) {
+      var msgs = (snap && snap.val ? snap.val() : null) || {};
+      _renderAdminChatMsgs(msgs);
+      // Mark client messages as read
+      Object.keys(msgs).forEach(function (msgId) {
+        if (msgs[msgId].senderRole === 'cliente' && !msgs[msgId].read) {
+          if (typeof window._fbMarkChatRead === 'function') window._fbMarkChatRead(clientKey, msgId);
+        }
+      });
+    });
+  }
+};
+
+window.adminCloseChat = function () {
+  window._adminChatClient = null;
+  if (_adminChatUnsub) try { _adminChatUnsub(); } catch(e){}
+  _adminChatUnsub = null;
+  var panel = document.getElementById('adminChatPanel');
+  if (panel) panel.style.display = 'none';
+};
+
+function _renderAdminChatMsgs(msgs) {
+  var el = document.getElementById('adminChatMsgs');
+  if (!el) return;
+  var userData = window._AUTH && window._AUTH.userData;
+  var myRole   = userData ? (userData.role || '') : '';
+
+  var entries = Object.entries(msgs).sort(function (a, b) { return (a[1].ts || 0) - (b[1].ts || 0); });
+
+  if (entries.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#9ca3af;font-size:12px;padding:16px;">Sin mensajes aún.</div>';
+    return;
+  }
+
+  var html = '';
+  entries.forEach(function (entry) {
+    var msg = entry[1];
+    var isMine = msg.senderRole === myRole;
+    var time   = msg.ts ? new Date(msg.ts).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : '';
+    var name   = msg.senderName || (msg.senderRole === 'cliente' ? 'Cliente' : 'Equipo');
+    html +=
+      '<div style="display:flex;flex-direction:column;align-items:' + (isMine ? 'flex-end' : 'flex-start') + ';margin-bottom:4px;">' +
+        '<div style="font-size:9px;color:#9ca3af;margin-bottom:1px;' + (isMine ? 'margin-right:4px;' : 'margin-left:4px;') + '">' + escH(name) + '</div>' +
+        '<div style="max-width:80%;padding:8px 11px;border-radius:' + (isMine ? '12px 12px 2px 12px' : '2px 12px 12px 12px') + ';' +
+          'background:' + (isMine ? '#0ea5e9' : '#f3f4f6') + ';' +
+          'color:' + (isMine ? '#fff' : '#1a1a1a') + ';font-size:12px;line-height:1.4;">' +
+          escH(msg.text || '') +
+        '</div>' +
+        (time ? '<div style="font-size:9px;color:#9ca3af;margin-top:1px;' + (isMine ? 'margin-right:4px;' : 'margin-left:4px;') + '">' + time + '</div>' : '') +
+      '</div>';
+  });
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+}
+
+// Keep _renderAdminChatMessages as alias
+window._renderAdminChatMessages = _renderAdminChatMsgs;
+
+window.adminSendChatMsg = function () {
+  var inp = document.getElementById('adminChatInput');
+  if (!inp) return;
+  var text = inp.value.trim();
+  if (!text || !window._adminChatClient) return;
+  var userData = window._AUTH && window._AUTH.userData;
+  var msg = {
+    text: text,
+    senderName: userData ? (userData.nombre || userData.email || 'Admin') : 'Admin',
+    senderRole: userData ? (userData.role || 'admin') : 'admin',
+    ts: Date.now(),
+    read: false
+  };
+  if (typeof window._fbSendMessage === 'function') {
+    window._fbSendMessage(window._adminChatClient, msg);
+    inp.value = '';
+  }
+};
 
 /* ─────────────────────────────────────────
    SETTINGS TAB (Programador only)

@@ -963,8 +963,8 @@ window._fbOnPresence = function(cb) { return onValue(ref(db, 'presencia'), cb); 
 window._FIREBASE_PROJECT_ID = firebaseConfig.projectId || '';
 
 // ── Portal del Cliente ──
-window._fbOnPortalTrees   = (clientKey, cb) => onValue(ref(db, 'clientePortal/' + clientKey + '/trees'), cb);
-window._fbSetPortalTree   = (clientKey, arbolKey, data) => set(ref(db, 'clientePortal/' + clientKey + '/trees/' + arbolKey), data);
+window._fbOnPortalTrees   = (clientKey, cb) => onValue(ref(db, 'clientePortal/' + clientKey + '/config/trees'), cb);
+window._fbSetPortalTree   = (clientKey, arbolKey, data) => set(ref(db, 'clientePortal/' + clientKey + '/config/trees/' + arbolKey), data);
 window._fbGetPortalConfig = (clientKey, cb) => onValue(ref(db, 'clientePortal/' + clientKey + '/config'), cb, { onlyOnce: true });
 window._fbSetPortalConfig = (clientKey, cfg) => set(ref(db, 'clientePortal/' + clientKey + '/config'), cfg);
 
@@ -973,6 +973,15 @@ window._fbOnChat        = (clientKey, cb) => onValue(ref(db, 'chat/' + clientKey
 window._fbSendMessage   = (clientKey, msg) => push(ref(db, 'chat/' + clientKey + '/messages'), msg);
 window._fbMarkChatRead  = (clientKey, msgId) => update(ref(db, 'chat/' + clientKey + '/messages/' + msgId), { read: true });
 window._fbOnAllChats    = (cb) => onValue(ref(db, 'chat'), cb);
+
+// ── Portal config (new structure: /clientePortal/{key}/config) ──
+window._fbOnPortalConfig  = (clientKey, cb) => onValue(ref(db, 'clientePortal/' + clientKey + '/config'), cb);
+// _fbGetPortalConfig and _fbSetPortalConfig already defined above
+
+// ── Notificaciones admin ──
+window._fbPushNotif       = (msg) => push(ref(db, 'notificaciones'), msg);
+window._fbOnNotifs        = (cb)  => onValue(ref(db, 'notificaciones'), cb);
+window._fbMarkNotifRead   = (key) => update(ref(db, 'notificaciones/' + key), { read: true });
 
 // ── Image compression — canvas resize to ≤1200px, JPEG 0.72 ──
 window._compressImage = function(file, maxPx, quality) {
@@ -1110,6 +1119,7 @@ window.CLOUDINARY_UPLOAD_PRESET = 'bosques_urbanos';
 <script src="js/map-global.js"></script>
 <script src="js/admin.js"></script>
 <script src="js/client-portal.js"></script>
+<script src="js/persistence.js"></script>
 <script src="js/app.js"></script>
 
 <!-- ═══ DEV CONSOLE MODAL (programador only) ═══ -->

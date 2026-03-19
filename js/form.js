@@ -658,6 +658,9 @@ function afterSubmit(idx) {
 
   updateProgress();
 
+  // Auto-save progress to localStorage (persistence system)
+  if (typeof window._persistSaveForm === 'function') window._persistSaveForm();
+
   // Scroll to next unanswered or results — center in the scroll container
   setTimeout(function() {
     var targetEl = nextIdx >= 0
@@ -1269,6 +1272,7 @@ async function saveAssessment() {
     const btn = document.getElementById('csSaveBtn');
     if (btn) { btn.textContent = '⏳ Guardando...'; btn.disabled = true; }
     await window.FB.pushEval(doc);
+    if (typeof window._persistClearForm === 'function') window._persistClearForm(); // clear saved progress
     window.showNotif('💾 Evaluación guardada ✅');
     window.closeComplete();
     window.resetFormFn(true);
@@ -1858,6 +1862,7 @@ function startNewTree() {
 // ── EXPOSE ON WINDOW ──
 
 window.getFormAnswers   = function() { return _answers; };
+window.setFormAnswers   = function(obj) { _answers = obj || {}; }; // for persistence restore
 window.getFormGPS       = function() { return _gpsCoords; };
 window.resetFormFn      = resetForm;
 window.buildForm        = buildForm;
