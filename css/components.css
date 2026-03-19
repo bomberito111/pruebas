@@ -339,6 +339,49 @@
   display: inline-block;
 }
 
+/* GPS chip inside tree card */
+.tc-gps {
+  font-size: 10px;
+  color: var(--forest-700);
+  font-family: var(--font-mono);
+  background: var(--forest-50, #f0fdf4);
+  border-radius: 6px;
+  padding: 2px 7px;
+  display: inline-block;
+}
+
+/* Bottom action strip for tree cards */
+.tc-actions {
+  display: flex;
+  border-top: 1px solid var(--border-light);
+  overflow: hidden;
+}
+
+.tc-act-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px 4px;
+  background: var(--white);
+  border: none;
+  border-right: 1px solid var(--border-light);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.1s;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.tc-act-btn:last-child { border-right: none; }
+.tc-act-btn:active     { background: var(--paper-dark); }
+
+.tc-act-detail { color: var(--forest-700); }
+.tc-act-map    { color: var(--forest-600); }
+.tc-act-hist   { color: var(--blue-700, #1d4ed8); }
+.tc-act-del    { color: var(--red-600, #dc2626); flex: 0; padding: 9px 14px; }
 
 /* ============================================================
    CLIENT CARDS (records level 1)
@@ -461,11 +504,11 @@
   margin-top: 3px;
 }
 
-/* Inline actions row */
+/* Inline actions row — client cards */
 .client-actions {
   display: flex;
-  gap: var(--s2);
-  padding: var(--s2) 14px var(--s3);
+  border-top: 1px solid var(--border-light);
+  overflow: hidden;
 }
 
 .ca-btn {
@@ -473,20 +516,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 8px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border);
-  background: var(--paper);
-  font-size: 11px;
+  gap: 4px;
+  padding: 10px 4px;
+  background: var(--white);
+  border: none;
+  border-right: 1px solid var(--border-light);
+  font-size: 10px;
   font-weight: 700;
   color: var(--ink-muted);
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.10s ease;
+  white-space: nowrap;
 }
 
+.ca-btn:last-child { border-right: none; }
 .ca-btn:active {
-  background: var(--forest-50);
+  background: var(--forest-50, #f0fdf4);
   color: var(--forest-800);
 }
 

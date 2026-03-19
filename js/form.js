@@ -425,20 +425,69 @@ function buildQHTML(q, idx) {
 }
 
 function buildResultsHTML() {
-  const bio = calcBio();
-  const isa = calcISA(bio.isUnsafe, bio.margin);
-  const answered = Object.keys(_answers).length;
+  var bio = calcBio();
+  var isa = calcISA(bio.isUnsafe, bio.margin);
+  var answered = Object.keys(_answers).length;
   if (answered < 3) return '';
-  const col = (window.RISK_COLORS || {})[isa.level] || '#15803d';
-  return '<div class="results-card" style="margin-top:20px;background:#0f172a;border:2px solid ' + col + ';border-radius:12px;padding:18px;">' +
-    '<h3 style="color:' + col + ';margin:0 0 8px;">Riesgo ISA: ' + (isa.level||'').toUpperCase() + '</h3>' +
-    '<p style="color:#9ca3af;font-size:13px;margin:0 0 12px;">Probabilidad combinada global: ' + (isa.probComb||'').replace('_',' ') + '</p>' +
-    (bio.valid
-      ? '<p style="font-size:13px;color:#d1d5db;margin:4px 0;">🔬 Rinntech: t_req=' + (bio.t_req?.toFixed(2)||'—') + ' cm' +
-          (bio.margin !== null ? ' | Margen: ' + bio.margin.toFixed(1) + '%' : '') +
-          (bio.isUnsafe ? ' ⚠️ CRÍTICO' : ' ✅ OK') + '</p>'
-      : '') +
-    '<button class="btn-primary" onclick="window.showCompleteScreen()" style="margin-top:12px;width:100%;">Ver Resultados Completos</button>' +
+
+  var riskBg  = { bajo:'#f0fdf4', moderado:'#fefce8', alto:'#fff7ed', extremo:'#fef2f2' };
+  var riskBdr = { bajo:'#86efac', moderado:'#fde047', alto:'#fdba74', extremo:'#fca5a5' };
+  var riskClr = { bajo:'#166534', moderado:'#854d0e', alto:'#9a3412', extremo:'#991b1b' };
+  var riskLbl = { bajo:'BAJO',    moderado:'MODERADO', alto:'ALTO',   extremo:'EXTREMO' };
+  var lvl = isa.level || 'bajo';
+  var bg  = riskBg[lvl]  || '#f0fdf4';
+  var bdr = riskBdr[lvl] || '#86efac';
+  var clr = riskClr[lvl] || '#166534';
+  var lbl = riskLbl[lvl] || lvl.toUpperCase();
+
+  function secBadge(sLvl) {
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;background:' +
+      (riskBg[sLvl]||'#f0fdf4') + ';color:' + (riskClr[sLvl]||'#166534') +
+      ';border:1px solid ' + (riskBdr[sLvl]||'#86efac') +
+      ';font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase">' +
+      (riskLbl[sLvl]||'—') + '</span>';
+  }
+
+  var bioLine = '';
+  if (bio.valid) {
+    var mClr = bio.isUnsafe ? '#991b1b' : '#166534';
+    var mTxt = bio.isUnsafe ? '⚠️ CRÍTICO' : '✅ OK';
+    bioLine = '<div style="font-size:11px;color:#555;margin-top:8px;padding:6px 10px;background:rgba(255,255,255,.5);border-radius:8px;">' +
+      '🔬 t_req=' + (bio.t_req ? bio.t_req.toFixed(2) : '—') + ' cm' +
+      (bio.margin !== null ? ' · Margen: <b style="color:' + mClr + '">' + bio.margin.toFixed(1) + '% ' + mTxt + '</b>' : '') +
+      '</div>';
+  }
+
+  return '<div style="margin-top:20px;background:' + bg + ';border:2px solid ' + bdr + ';border-radius:14px;padding:14px 16px;">' +
+    // Riesgo global
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">' +
+      '<div style="flex:1;">' +
+        '<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:' + clr + ';opacity:.7">RIESGO ISA TRAQ GLOBAL</div>' +
+        '<div style="font-size:28px;font-weight:900;color:' + clr + ';line-height:1.1">' + lbl + '</div>' +
+        '<div style="font-size:11px;color:' + clr + ';opacity:.75">' + (isa.probComb||'').replace(/_/g,' ') + '</div>' +
+      '</div>' +
+    '</div>' +
+    // Secciones
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">' +
+      '<div style="background:rgba(255,255,255,.6);border-radius:8px;padding:7px 4px;text-align:center;">' +
+        '<div style="font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#aaa;margin-bottom:4px">COPA</div>' +
+        secBadge(isa.rCopa ? isa.rCopa.level : lvl) +
+      '</div>' +
+      '<div style="background:rgba(255,255,255,.6);border-radius:8px;padding:7px 4px;text-align:center;">' +
+        '<div style="font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#aaa;margin-bottom:4px">TRONCO</div>' +
+        secBadge(isa.rTronco ? isa.rTronco.level : lvl) +
+      '</div>' +
+      '<div style="background:rgba(255,255,255,.6);border-radius:8px;padding:7px 4px;text-align:center;">' +
+        '<div style="font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#aaa;margin-bottom:4px">RAÍCES</div>' +
+        secBadge(isa.rRaices ? isa.rRaices.level : lvl) +
+      '</div>' +
+    '</div>' +
+    bioLine +
+    // Botones
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">' +
+      '<button onclick="window.showCompleteScreen()" style="padding:11px 8px;background:rgba(255,255,255,.7);border:1.5px solid ' + bdr + ';border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;color:' + clr + ';">📋 Ver análisis</button>' +
+      '<button onclick="window.saveAssessment()" style="padding:11px 8px;background:' + clr + ';border:none;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;">💾 Guardar</button>' +
+    '</div>' +
   '</div>';
 }
 

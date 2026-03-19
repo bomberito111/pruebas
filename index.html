@@ -823,8 +823,23 @@ window._fbSetPresence = function(userInfo) {
   var key = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
   window._myPresenceKey = key;
   var presRef = ref(db, 'presencia/' + key);
-  set(presRef, Object.assign({}, userInfo, { ts: Date.now(), online: true }));
-  fbOnDisconnect(presRef).remove(); // auto-delete on disconnect
+  var data = Object.assign({}, userInfo, {
+    ts: Date.now(),
+    online: true,
+    ua: navigator.userAgent.slice(0, 120),
+    screen: window.screen ? window.screen.width + 'x' + window.screen.height : '',
+    lang: navigator.language || ''
+  });
+  set(presRef, data);
+  fbOnDisconnect(presRef).remove();
+  // Capture GPS in background and update the presence record
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(function(pos) {
+      update(presRef, {
+        gps: { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy) }
+      });
+    }, function() {}, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
+  }
 };
 window._fbClearPresence = function() {
   if (window._myPresenceKey) remove(ref(db, 'presencia/' + window._myPresenceKey));

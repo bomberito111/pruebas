@@ -511,10 +511,16 @@
       html += '</div>';
 
       // Body
+      // Body — clickable main area
       html += '<div class="tc-body" onclick="showTreeDetail(\'' + key + '\')">';
-      html += '<div class="tc-pills">';
 
-      // Risk pills for each diana group
+      // GPS chip if available
+      if (gpsHtml) {
+        html += '<div style="margin-bottom:6px;">' + gpsHtml + '</div>';
+      }
+
+      // Risk pills per section
+      html += '<div class="tc-pills">';
       var dianasKeys = ['copa_dianas', 'tronco_dianas', 'raices_dianas'];
       var dianasLabels = { copa_dianas: 'Copa', tronco_dianas: 'Tronco', raices_dianas: 'Raíces' };
       dianasKeys.forEach(function (dk) {
@@ -530,17 +536,17 @@
         html += '<span class="tc-pill tp-' + risk + '">' + label + '</span>';
       }
       html += '</div>';
-
-      html += '<div class="tc-meta">';
-      html += gpsHtml;
-      var _haGps = !!gpsHtml;
-      if (_haGps) {
-        html += '<button onclick="event.stopPropagation();switchTab(\'home\');setTimeout(function(){window.setActiveClient&&setActiveClient(encodeURIComponent(\'' + (ev.cliente || '').replace(/'/g, '') + '\'));setTimeout(function(){window.openMASFromKey&&openMASFromKey(\'' + key + '\')},300)},100)" style="font-size:10px;padding:4px 10px;border-radius:6px;border:1.5px solid #15803d;background:#dcfce7;cursor:pointer;font-weight:700;color:#15803d;">🗺️ Mapa</button>';
-      }
-      html += '<button onclick="event.stopPropagation();dbOpenTree(\'' + encodeURIComponent(t.aid) + '\')" style="font-size:10px;padding:4px 10px;border-radius:6px;border:1.5px solid #ddd;background:#fff;cursor:pointer;font-weight:700;color:#555;">↺ Historial</button>';
-      html += '<button onclick="event.stopPropagation();deleteTree(\'' + encodeURIComponent(t.aid) + '\')" style="font-size:10px;padding:4px 10px;border-radius:6px;border:1.5px solid #fecaca;background:#fee2e2;cursor:pointer;font-weight:700;color:#b91c1c;">🗑 Eliminar</button>';
-      html += '</div>';
       html += '</div>'; // tc-body
+
+      // Bottom action strip — stopPropagation so it doesn't open detail
+      html += '<div class="tc-actions">';
+      html += '<button class="tc-act-btn tc-act-detail" onclick="event.stopPropagation();showTreeDetail(\'' + key + '\')">🔍 Ver detalle</button>';
+      if (gpsHtml) {
+        html += '<button class="tc-act-btn tc-act-map" onclick="event.stopPropagation();switchTab(\'home\');setTimeout(function(){window.setActiveClient&&setActiveClient(encodeURIComponent(\'' + (ev.cliente || '').replace(/'/g, '') + '\'));setTimeout(function(){window.openMASFromKey&&openMASFromKey(\'' + key + '\')},300)},100)">🗺️ Mapa</button>';
+      }
+      html += '<button class="tc-act-btn tc-act-hist" onclick="event.stopPropagation();dbOpenTree(\'' + encodeURIComponent(t.aid) + '\')">↺ Historial</button>';
+      html += '<button class="tc-act-btn tc-act-del" onclick="event.stopPropagation();deleteTree(\'' + encodeURIComponent(t.aid) + '\')">🗑</button>';
+      html += '</div>';
 
       html += '</div>'; // tree-card
     });
