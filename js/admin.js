@@ -973,21 +973,26 @@ window._adminSelfChangePass = function () {
    Full raw Firebase browser + inline editor
 ═══════════════════════════════════════════════════════ */
 
-var _devTab        = 'eval';
+var _devTab        = 'overview';
 var _devData       = null;     // raw object loaded
 var _devPath       = '';       // active Firebase path string
 var _devSelPath    = null;     // dotted path within _devData of selected node
 var _devExpanded   = {};       // set of expanded node paths
 
 var _devTabPaths = {
+  overview:   null,
   eval:       'evaluaciones',
   clientes:   'clientes',
   archivos:   'archivos',
   usuarios:   'usuarios',
-  online:     'presencia',
+  online:     null,
   servidores: null,
+  config:     null,
   custom:     null
 };
+
+// Tabs that use the editor panel and toolbar (data explorer tabs)
+var _devDataTabs = { eval:true, clientes:true, archivos:true, usuarios:true, custom:true };
 
 window.openDevConsole = function () {
   var role = window.APP && window.APP.userRole;
@@ -996,6 +1001,12 @@ window.openDevConsole = function () {
   if (modal) modal.style.display = 'flex';
   _devExpanded = {};
   _devSelPath = null;
+  // Sync editor/toolbar visibility with the current tab
+  var isDataTab = _devDataTabs[_devTab];
+  var editor = document.getElementById('devEditor');
+  var toolbar = document.getElementById('devToolbar');
+  if (editor) editor.style.display = isDataTab ? 'flex' : 'none';
+  if (toolbar) toolbar.style.display = isDataTab ? 'flex' : 'none';
   devLoad();
 };
 
@@ -1013,17 +1024,25 @@ window.devSetTab = function (tab) {
   });
   var fbPath = _devTabPaths[tab];
   if (fbPath) {
-    var el = document.getElementById('devPathInput');
-    if (el) el.value = '/' + fbPath;
+    var pathEl = document.getElementById('devPathInput');
+    if (pathEl) pathEl.value = '/' + fbPath;
   }
+  // Show/hide editor and toolbar based on tab type
+  var isDataTab = _devDataTabs[tab];
+  var editor = document.getElementById('devEditor');
+  var toolbar = document.getElementById('devToolbar');
+  if (editor) editor.style.display = isDataTab ? 'flex' : 'none';
+  if (toolbar) toolbar.style.display = isDataTab ? 'flex' : 'none';
   _devExpanded = {};
   devLoad();
 };
 
 window.devLoad = async function () {
   // Special tabs with custom renderers
+  if (_devTab === 'overview')   { _devRenderOverview();   return; }
   if (_devTab === 'servidores') { _devRenderServidores(); return; }
   if (_devTab === 'online')     { _devRenderOnline();     return; }
+  if (_devTab === 'config')     { _devRenderConfig();     return; }
 
   var pathEl = document.getElementById('devPathInput');
   var rawPath = (pathEl ? pathEl.value.trim() : '') || '/';
@@ -1184,93 +1203,326 @@ window._devSaveCloudinary = async function() {
   }
 };
 
+// ── ⚙️ CONFIG tab ──────────────────────────────────────────
+function _devRenderConfig() {
+  var treeEl   = document.getElementById('devTree');
+  var statusEl = document.getElementById('devStatus');
+  if (statusEl) statusEl.textContent = '⚙️ Configuración de la aplicación';
+
+  treeEl.style.overflow = '';
+  treeEl.style.display  = '';
+  treeEl.style.flexDirection = '';
+  treeEl.style.padding  = '';
+
+  var inp = function(id, val, placeholder, color) {
+    return '<input id="' + id + '" value="' + _escDev(val||'') + '" placeholder="' + _escDev(placeholder||'') + '" ' +
+      'style="width:100%;box-sizing:border-box;background:#0a0a0a;border:1px solid #374151;border-radius:6px;padding:7px 9px;' +
+      'color:' + (color||'#d1fae5') + ';font-family:\'IBM Plex Mono\',monospace;font-size:11px;margin-bottom:5px;outline:none">';
+  };
+
+  function section(icon, title, content) {
+    return '<div style="background:#111;border:1px solid #1f2937;border-radius:10px;margin-bottom:12px;overflow:hidden;">' +
+      '<div style="padding:10px 14px;border-bottom:1px solid #1f2937;font-size:10px;font-weight:800;color:#4ade80;text-transform:uppercase;letter-spacing:1px;">' + icon + ' ' + title + '</div>' +
+      '<div style="padding:12px 14px;">' + content + '</div>' +
+    '</div>';
+  }
+
+  function saveBtn(fn, label) {
+    return '<button onclick="' + fn + '" style="padding:7px 14px;background:#065f46;color:#6ee7b7;border:none;border-radius:6px;font-weight:700;font-size:10px;cursor:pointer;font-family:\'IBM Plex Mono\',monospace;">' + label + '</button>';
+  }
+
+  // Load current config from Firebase
+  (async function() {
+    var cfg = {};
+    try {
+      if (typeof window._fbGetConfig === 'function') {
+        var appCfg = await window._fbGetConfig('app');
+        if (appCfg) cfg = appCfg;
+      }
+    } catch(e) {}
+
+    var appTitle  = cfg.title  || 'Bosques Urbanos';
+    var appSub    = cfg.subtitle || 'ISA TRAQ Asset Management';
+    var ghRepo    = cfg.ghRepo    || 'https://github.com/bomberito111/pruebas';
+    var ghPages   = cfg.ghPages   || 'https://bomberito111.github.io/pruebas/';
+    var maxPhotos = cfg.maxPhotos || 10;
+    var defRol    = cfg.defaultRole || 'usuario';
+
+    treeEl.innerHTML = '<div style="max-width:680px;padding-bottom:20px;">' +
+
+    section('🏷️', 'Identidad de la app',
+      '<label style="font-size:10px;color:#4b5563;display:block;margin-bottom:2px">Título principal</label>' +
+      inp('cfg-title', appTitle, 'Bosques Urbanos') +
+      '<label style="font-size:10px;color:#4b5563;display:block;margin-bottom:2px">Subtítulo / descripción</label>' +
+      inp('cfg-subtitle', appSub, 'ISA TRAQ Asset Management') +
+      saveBtn('_devSaveAppConfig()', '💾 Guardar')
+    ) +
+
+    section('🔗', 'URLs de la aplicación',
+      '<label style="font-size:10px;color:#4b5563;display:block;margin-bottom:2px">Repositorio GitHub</label>' +
+      inp('cfg-ghrepo', ghRepo, 'https://github.com/...') +
+      '<label style="font-size:10px;color:#4b5563;display:block;margin-bottom:2px">URL pública (GitHub Pages)</label>' +
+      inp('cfg-ghpages', ghPages, 'https://...github.io/...') +
+      saveBtn('_devSaveAppConfig()', '💾 Guardar')
+    ) +
+
+    section('☁️', 'Cloudinary — Almacenamiento',
+      '<label style="font-size:10px;color:#4b5563;display:block;margin-bottom:2px">Cloud Name</label>' +
+      inp('devCloudName', window.CLOUDINARY_CLOUD_NAME||'db2qb5hlj', 'Cloud Name', '#fde68a') +
+      '<label style="font-size:10px;color:#4b5563;display:block;margin-bottom:2px">Upload Preset (unsigned)</label>' +
+      inp('devUploadPreset', window.CLOUDINARY_UPLOAD_PRESET||'bosques_urbanos', 'Upload Preset', '#fde68a') +
+      saveBtn('_devSaveCloudinary()', '💾 Guardar Cloudinary') +
+      '<div id="devCloudinaryStatus" style="font-size:10px;color:#4b5563;margin-top:5px"></div>'
+    ) +
+
+    section('⚙️', 'Opciones generales',
+      '<label style="font-size:10px;color:#4b5563;display:block;margin-bottom:2px">Máximo de fotos por árbol</label>' +
+      inp('cfg-maxphotos', maxPhotos, '10') +
+      '<label style="font-size:10px;color:#4b5563;display:block;margin-bottom:2px">Rol por defecto para nuevos usuarios</label>' +
+      '<select id="cfg-defrole" style="width:100%;background:#0a0a0a;border:1px solid #374151;border-radius:6px;padding:7px 9px;color:#d1fae5;font-family:\'IBM Plex Mono\',monospace;font-size:11px;margin-bottom:5px;outline:none">' +
+        '<option value="usuario"' + (defRol==='usuario'?' selected':'') + '>usuario</option>' +
+        '<option value="admin"' + (defRol==='admin'?' selected':'') + '>admin</option>' +
+      '</select>' +
+      saveBtn('_devSaveAppConfig()', '💾 Guardar')
+    ) +
+
+    section('🔒', 'Seguridad y acceso',
+      '<div style="font-size:11px;color:#d1fae5;margin-bottom:10px">Gestión de usuarios de la aplicación:</div>' +
+      '<button onclick="devSetTab(\'usuarios\')" style="padding:8px 14px;background:#1e3a5f;color:#93c5fd;border:1px solid #1d4ed8;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Mono\',monospace;margin-bottom:6px;display:block;width:100%">👥 Abrir gestión de usuarios →</button>' +
+      '<div style="font-size:10px;color:#4b5563;margin-top:8px">Los usuarios se almacenan en Firebase <code style="color:#4ade80">/usuarios</code> y se autentican con contraseña hasheada.</div>'
+    ) +
+
+    '</div>';
+  })();
+}
+
+window._devSaveAppConfig = async function() {
+  var title     = (document.getElementById('cfg-title')    || {}).value || '';
+  var subtitle  = (document.getElementById('cfg-subtitle') || {}).value || '';
+  var ghRepo    = (document.getElementById('cfg-ghrepo')   || {}).value || '';
+  var ghPages   = (document.getElementById('cfg-ghpages')  || {}).value || '';
+  var maxPhotos = parseInt((document.getElementById('cfg-maxphotos')||{}).value||'10', 10);
+  var defRole   = (document.getElementById('cfg-defrole')  || {}).value || 'usuario';
+
+  try {
+    await window._fbSetConfig('app', { title, subtitle, ghRepo, ghPages, maxPhotos, defaultRole: defRole });
+    window.showNotif('✅ Configuración guardada');
+  } catch(e) {
+    window.showNotif('❌ Error: ' + e.message);
+  }
+};
+
+// ── 📊 RESUMEN tab ──────────────────────────────────────────
+function _devRenderOverview() {
+  var treeEl   = document.getElementById('devTree');
+  var statusEl = document.getElementById('devStatus');
+  if (statusEl) statusEl.textContent = '📊 Resumen del sistema';
+
+  var db  = window._dbAll || {};
+  var cls = window._clientesAll || {};
+  var nEv = Object.keys(db).length;
+  var nCl = Object.keys(cls).length;
+
+  // Risk distribution
+  var riskCounts = { bajo:0, moderado:0, alto:0, extremo:0 };
+  var latestByTree = {};
+  Object.keys(db).forEach(function(k) {
+    var ev = db[k]; var aid = ev.arbolId || k;
+    var ts = ev.timestamp || 0;
+    if (!latestByTree[aid] || ts > (latestByTree[aid].ts||0)) latestByTree[aid] = { ev:ev, ts:ts };
+  });
+  Object.values(latestByTree).forEach(function(item) {
+    var r = (typeof window.getEffectiveRisk==='function') ? window.getEffectiveRisk(item.ev) : (item.ev.isaLevel||'bajo');
+    riskCounts[r] = (riskCounts[r]||0) + 1;
+  });
+  var nTrees = Object.keys(latestByTree).length;
+
+  var clN = window.CLOUDINARY_CLOUD_NAME || 'db2qb5hlj';
+  var proj = window._FIREBASE_PROJECT_ID || 'appp-1ed52';
+
+  function big(val, lbl, col) {
+    return '<div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:14px 12px;text-align:center;">' +
+      '<div style="font-size:24px;font-weight:800;color:' + (col||'#4ade80') + ';line-height:1">' + val + '</div>' +
+      '<div style="font-size:9px;color:#4b5563;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-top:4px">' + lbl + '</div>' +
+    '</div>';
+  }
+
+  var rColors = { bajo:'#4ade80', moderado:'#fbbf24', alto:'#f97316', extremo:'#ef4444' };
+  var riskBar = Object.entries(riskCounts).filter(function(e){return e[1]>0;}).map(function(e) {
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+      '<span style="width:55px;font-size:9px;font-weight:700;color:' + rColors[e[0]] + ';text-transform:uppercase">' + e[0] + '</span>' +
+      '<div style="flex:1;background:#1f2937;border-radius:4px;height:12px;overflow:hidden;">' +
+        '<div style="height:100%;background:' + rColors[e[0]] + ';width:' + (nTrees>0?Math.round(e[1]/nTrees*100):0) + '%"></div>' +
+      '</div>' +
+      '<span style="font-size:10px;font-weight:700;color:#d1fae5;width:24px;text-align:right">' + e[1] + '</span>' +
+    '</div>';
+  }).join('');
+
+  treeEl.innerHTML =
+    '<div style="max-width:720px;padding-bottom:20px;">' +
+
+    '<div style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#4b5563;margin-bottom:10px;">📊 Estadísticas generales</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">' +
+      big(nEv, 'Evaluaciones', '#4ade80') +
+      big(nTrees, 'Árboles', '#4ade80') +
+      big(nCl, 'Clientes', '#93c5fd') +
+      big(riskCounts.extremo||0, 'Extremo', '#ef4444') +
+    '</div>' +
+
+    '<div style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#4b5563;margin-bottom:8px;">🎯 Distribución de riesgo</div>' +
+    '<div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:14px;margin-bottom:16px;">' +
+      (nTrees > 0 ? riskBar : '<span style="color:#4b5563;font-size:10px">Sin árboles evaluados</span>') +
+    '</div>' +
+
+    '<div style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#4b5563;margin-bottom:8px;">⚡ Acceso rápido</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">' +
+      '<button onclick="devSetTab(\'usuarios\')" style="padding:12px;background:#111;border:1px solid #374151;border-radius:8px;color:#d1fae5;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Mono\',monospace;text-align:left">👥 Gestionar usuarios →</button>' +
+      '<button onclick="devSetTab(\'online\')" style="padding:12px;background:#111;border:1px solid #374151;border-radius:8px;color:#d1fae5;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Mono\',monospace;text-align:left">🟢 Ver sesiones activas →</button>' +
+      '<button onclick="devSetTab(\'servidores\')" style="padding:12px;background:#111;border:1px solid #374151;border-radius:8px;color:#d1fae5;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Mono\',monospace;text-align:left">🌐 Panel de servidores →</button>' +
+      '<button onclick="devSetTab(\'config\')" style="padding:12px;background:#111;border:1px solid #374151;border-radius:8px;color:#d1fae5;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Mono\',monospace;text-align:left">⚙️ Configuración de app →</button>' +
+    '</div>' +
+
+    '<div style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#4b5563;margin-bottom:8px;">🔗 Servidores activos</div>' +
+    '<div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:12px;font-size:11px;display:flex;flex-direction:column;gap:6px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;"><span style="color:#4ade80">🔥</span> <span style="color:#d1fae5;font-weight:700">Firebase</span> <span style="color:#4b5563">· ' + proj + '</span> <span style="margin-left:auto;color:#4ade80;font-size:9px">● ACTIVO</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;"><span style="color:#fbbf24">☁️</span> <span style="color:#d1fae5;font-weight:700">Cloudinary</span> <span style="color:#4b5563">· ' + clN + '</span> <span style="margin-left:auto;color:#4ade80;font-size:9px">● ACTIVO</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;"><span style="color:#93c5fd">🐙</span> <span style="color:#d1fae5;font-weight:700">GitHub Pages</span> <span style="color:#4b5563">· bomberito111/pruebas</span> <span style="margin-left:auto;color:#4ade80;font-size:9px">● LIVE</span></div>' +
+    '</div>' +
+
+    '</div>';
+}
+
 // ── 👁 EN LÍNEA tab ──────────────────────────────────────────
 var _devOnlineUnsub = null;
+var _devOnlineMap   = null;
+
 function _devRenderOnline() {
   var treeEl   = document.getElementById('devTree');
   var statusEl = document.getElementById('devStatus');
-  if (statusEl) statusEl.textContent = '👁 Monitoreando usuarios en tiempo real...';
-  if (treeEl)   treeEl.innerHTML = '<span style="color:#4b5563">Conectando a Firebase Presence...</span>';
+  if (statusEl) statusEl.textContent = '👁 Monitoreando sesiones...';
 
   if (_devOnlineUnsub && typeof _devOnlineUnsub === 'function') { _devOnlineUnsub(); _devOnlineUnsub = null; }
+  if (_devOnlineMap) { try { _devOnlineMap.remove(); } catch(e){} _devOnlineMap = null; }
+
+  if (!treeEl) return;
+
+  // Layout: map (top, fixed height) + list (scrollable below)
+  treeEl.style.overflow = 'hidden';
+  treeEl.style.display  = 'flex';
+  treeEl.style.flexDirection = 'column';
+  treeEl.style.padding  = '0';
+
+  treeEl.innerHTML =
+    '<div id="devOnlineMap" style="height:260px;flex-shrink:0;background:#111;border-bottom:1px solid #1f2937;"></div>' +
+    '<div id="devOnlineList" style="flex:1;overflow-y:auto;padding:12px 16px;"></div>';
+
+  // Initialize Leaflet map
+  setTimeout(function() {
+    var mapEl = document.getElementById('devOnlineMap');
+    if (!mapEl || typeof L === 'undefined') return;
+    try {
+      var map = L.map('devOnlineMap', { zoomControl:true, attributionControl:false }).setView([20, 0], 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:18 }).addTo(map);
+      _devOnlineMap = map;
+    } catch(e) { console.warn('Map init error:', e); }
+  }, 80);
 
   if (typeof window._fbOnPresence !== 'function') {
-    treeEl.innerHTML = '<span style="color:#f87171">Firebase presencia no disponible</span>';
+    document.getElementById('devOnlineList').innerHTML = '<span style="color:#f87171">Firebase presencia no disponible</span>';
     return;
   }
+
   _devOnlineUnsub = window._fbOnPresence(function(snap) {
     var data = snap && snap.val ? snap.val() : null;
     var sessions = data ? Object.entries(data) : [];
     var tabBtn = document.getElementById('devTabOnline');
     if (tabBtn) tabBtn.textContent = '🟢 En línea (' + sessions.length + ')';
     if (statusEl) statusEl.textContent = '🟢 ' + sessions.length + ' sesión' + (sessions.length !== 1 ? 'es' : '') + ' activa' + (sessions.length !== 1 ? 's' : '');
-    if (!treeEl) return;
+
+    var listEl = document.getElementById('devOnlineList');
+    if (!listEl) return;
+
+    // Update map markers
+    if (_devOnlineMap) {
+      _devOnlineMap.eachLayer(function(layer) {
+        if (layer instanceof L.Marker) _devOnlineMap.removeLayer(layer);
+      });
+      var bounds = [];
+      sessions.forEach(function(entry) {
+        var s = entry[1];
+        if (s.gps && s.gps.lat && s.gps.lng) {
+          var lat = Number(s.gps.lat), lng = Number(s.gps.lng);
+          var role   = s.role || 'usuario';
+          var user   = s.username || s.nombre || s.email || 'Anónimo';
+          var src    = s.gps.source === 'gps' ? '📍 GPS preciso' : '📡 Aprox. por IP';
+          var rColor = role === 'programador' ? '#c084fc' : role === 'admin' ? '#fbbf24' : '#4ade80';
+          var icon = L.divIcon({
+            html: '<div style="width:14px;height:14px;border-radius:50%;background:' + rColor + ';border:2px solid #fff;box-shadow:0 0 0 3px ' + rColor + '55;"></div>',
+            className: '', iconSize:[14,14], iconAnchor:[7,7]
+          });
+          var marker = L.marker([lat, lng], { icon:icon })
+            .bindPopup('<b style="font-family:sans-serif">' + user + '</b><br><small style="font-family:sans-serif">' + role + ' · ' + src + (s.gps.city ? '<br>' + s.gps.city + ', ' + s.gps.country : '') + '</small>');
+          marker.addTo(_devOnlineMap);
+          bounds.push([lat, lng]);
+        }
+      });
+      if (bounds.length > 0) {
+        try { _devOnlineMap.fitBounds(bounds, { padding:[30,30], maxZoom:10 }); } catch(e){}
+      }
+    }
 
     if (sessions.length === 0) {
-      treeEl.innerHTML = '<div style="padding:40px;text-align:center;color:#4b5563">Sin usuarios conectados ahora mismo</div>';
+      listEl.innerHTML = '<div style="padding:30px;text-align:center;color:#4b5563;">Sin usuarios conectados ahora mismo</div>';
       return;
     }
 
     var now = Date.now();
-    var cards = sessions
+    listEl.innerHTML = sessions
       .sort(function(a,b){ return (b[1].ts||0)-(a[1].ts||0); })
       .map(function(entry) {
         var key = entry[0], s = entry[1];
         var ago = Math.round((now - (s.ts||now)) / 1000);
         var agoStr = ago < 60 ? ago + 's' : (ago < 3600 ? Math.round(ago/60) + 'min' : Math.round(ago/3600) + 'h');
-        var role   = s.role     || 'usuario';
+        var role   = s.role || 'usuario';
         var user   = s.username || s.nombre || s.email || '(anónimo)';
         var rColor = role === 'programador' ? '#c084fc' : role === 'admin' ? '#fbbf24' : '#4ade80';
 
-        // GPS block
         var gpsBlock = '';
         if (s.gps && s.gps.lat && s.gps.lng) {
-          var lat = Number(s.gps.lat).toFixed(5);
-          var lng = Number(s.gps.lng).toFixed(5);
-          var acc = s.gps.acc ? ' ±' + s.gps.acc + 'm' : '';
-          gpsBlock = '<a href="https://maps.google.com/?q=' + lat + ',' + lng + '" target="_blank" ' +
-            'style="display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:4px 8px;' +
-            'background:#0a1a0a;border:1px solid #15803d;border-radius:6px;text-decoration:none;' +
-            'color:#4ade80;font-size:10px;font-family:\'IBM Plex Mono\',monospace;">' +
-            '📍 ' + lat + ', ' + lng + acc +
-            '<span style="margin-left:4px;color:#15803d;font-size:9px">Ver en Maps ›</span>' +
-          '</a>';
+          var lat = Number(s.gps.lat).toFixed(5), lng = Number(s.gps.lng).toFixed(5);
+          var src = s.gps.source === 'gps' ? '📍 GPS' : '📡 IP aprox.';
+          var city = s.gps.city ? ' · ' + s.gps.city + (s.gps.country ? ', ' + s.gps.country : '') : '';
+          var isp  = s.gps.isp  ? ' · ' + s.gps.isp : '';
+          gpsBlock =
+            '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;">' +
+              '<a href="https://maps.google.com/?q=' + lat + ',' + lng + '" target="_blank" ' +
+                'style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:#0a1a0a;border:1px solid #15803d;border-radius:5px;text-decoration:none;color:#4ade80;font-size:10px;font-family:\'IBM Plex Mono\',monospace;">' +
+                src + ' ' + lat + ', ' + lng + ' →</a>' +
+              '<span style="font-size:9px;color:#4b5563">' + _escDev(city + isp) + '</span>' +
+            '</div>';
         } else {
-          gpsBlock = '<span style="font-size:9px;color:#374151;margin-top:4px;display:inline-block;">📍 Sin GPS</span>';
+          gpsBlock = '<span style="font-size:9px;color:#374151;margin-top:5px;display:inline-block;">📍 Sin ubicación</span>';
         }
 
-        // Device/browser info
         var ua = s.ua || '';
         var isMobile = /Mobi|Android|iPhone|iPad/i.test(ua);
-        var deviceIcon = isMobile ? '📱' : '💻';
-        var screen = s.screen ? ' · ' + s.screen : '';
-        var lang = s.lang ? ' · ' + s.lang : '';
-        var deviceInfo = ua ? deviceIcon + ' ' + (ua.slice(0,60) + (ua.length > 60 ? '…' : '')) + screen + lang : '';
+        var screen = s.screen ? s.screen : '';
 
-        return '<div style="background:#0f1f0f;border:1px solid #1f2937;border-radius:12px;margin-bottom:10px;overflow:hidden;">' +
-          // Header row
-          '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px 8px;">' +
-            '<div style="width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.25);flex-shrink:0;"></div>' +
+        return '<div style="background:#0f1f0f;border:1px solid #1f2937;border-radius:10px;margin-bottom:8px;overflow:hidden;">' +
+          '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px 6px;">' +
+            '<div style="width:9px;height:9px;border-radius:50%;background:#22c55e;flex-shrink:0;box-shadow:0 0 0 3px rgba(34,197,94,.2)"></div>' +
             '<div style="flex:1;min-width:0;">' +
-              '<div style="font-size:13px;font-weight:700;color:#d1fae5">' + _escDev(user) + '</div>' +
-              '<div style="font-size:10px;color:#4b5563;margin-top:1px">Conectado hace ' + agoStr + '</div>' +
+              '<span style="font-size:12px;font-weight:700;color:#d1fae5">' + _escDev(user) + '</span>' +
+              '<span style="font-size:9px;color:#4b5563;margin-left:8px">hace ' + agoStr + '</span>' +
             '</div>' +
-            '<span style="font-size:10px;font-weight:800;color:' + rColor + ';text-transform:uppercase;background:rgba(0,0,0,.5);padding:3px 8px;border-radius:6px;border:1px solid ' + rColor + '33;">' + _escDev(role) + '</span>' +
+            '<span style="font-size:9px;font-weight:800;color:' + rColor + ';text-transform:uppercase;border:1px solid ' + rColor + '44;padding:2px 7px;border-radius:4px;">' + _escDev(role) + '</span>' +
           '</div>' +
-          // GPS + device
-          '<div style="padding:0 14px 12px;border-top:1px solid #1f2937;padding-top:8px;">' +
+          '<div style="padding:0 12px 10px;border-top:1px solid #1f2937;padding-top:7px;">' +
             gpsBlock +
-            (deviceInfo ? '<div style="font-size:9px;color:#374151;margin-top:5px;word-break:break-all;">' + _escDev(deviceInfo) + '</div>' : '') +
-            '<div style="font-size:9px;color:#1f2937;margin-top:3px;font-family:\'IBM Plex Mono\',monospace">ID: ' + _escDev(key.slice(0,20)) + '...</div>' +
+            (ua ? '<div style="font-size:9px;color:#1f2937;margin-top:4px;word-break:break-all;">' + (isMobile?'📱':'💻') + ' ' + _escDev(ua.slice(0,70)) + (screen?' · '+screen:'') + '</div>' : '') +
           '</div>' +
         '</div>';
-      });
-
-    treeEl.innerHTML =
-      '<div style="max-width:680px">' +
-        '<div style="font-size:10px;color:#4b5563;margin-bottom:12px;">⏱ Actualización en tiempo real · ' + new Date().toLocaleTimeString() + '</div>' +
-        cards.join('') +
-      '</div>';
+      }).join('');
   });
 }
 
