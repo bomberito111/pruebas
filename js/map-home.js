@@ -428,14 +428,8 @@ window.initCompass = function () {
     if (heading === null || isNaN(heading)) return;
     _homeCompassHeading = heading;
 
-    // Show bar
-    if (wrap && wrap.style.display === 'none') {
-      wrap.style.display = 'block';
-      // Push top overlay down so compass doesn't cover client pill
-      var topOverlay = document.getElementById('homeTopOverlay');
-      if (topOverlay) topOverlay.style.top = '38px'; // 28px bar + 10px gap
-    }
-    _updateCompassBar(heading);
+    // Compass bar is intentionally hidden — only the GPS marker cone shows direction.
+    // (Bar was covering the UI on mobile, so it stays hidden.)
 
     // Update GPS marker icon with direction
     if (_homeUserMarker) {

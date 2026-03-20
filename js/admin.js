@@ -2344,11 +2344,11 @@ function _adminRenderReports() {
     // Actions
     html += '<div style="display:flex;gap:7px">';
     if (!r.resolved) {
-      html += '<button onclick="adminResolveReport(' + JSON.stringify(key) + ',true)" style="flex:1;padding:7px;background:#f0fdf4;color:#15803d;border:1.5px solid #86efac;border-radius:9px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">✅ Resolver y cerrar</button>';
+      html += '<button onclick="adminResolveReport(\'' + key + '\',true)" style="flex:1;padding:7px;background:#f0fdf4;color:#15803d;border:1.5px solid #86efac;border-radius:9px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">✅ Resolver y cerrar</button>';
     } else {
       html += '<span style="flex:1;padding:7px;background:#d1fae5;color:#15803d;border:1.5px solid #86efac;border-radius:9px;font-size:11px;font-weight:700;text-align:center;display:flex;align-items:center;justify-content:center;gap:5px;">✅ Resuelto · eliminando…</span>';
     }
-    html += '<button onclick="adminDeleteReport(' + JSON.stringify(key) + ')" style="padding:7px 12px;background:#fff1f2;color:#b91c1c;border:1.5px solid #fecdd3;border-radius:9px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif" title="Eliminar ahora">🗑️</button>';
+    html += '<button onclick="adminDeleteReport(\'' + key + '\')" style="padding:7px 12px;background:#fff1f2;color:#b91c1c;border:1.5px solid #fecdd3;border-radius:9px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif" title="Eliminar ahora">🗑️</button>';
     html += '</div>';
     html += '</div>';
   });
