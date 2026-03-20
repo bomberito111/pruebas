@@ -2538,10 +2538,14 @@
   /* ══════════════════════════════════════════════════════════
      SISTEMA DE REPORTES Y SUGERENCIAS (shake only)
   ══════════════════════════════════════════════════════════ */
+  window._reportScreenshotBlob    = null;
+  window._reportScreenshotDataUrl  = null;
+
   window.openReportModal = function () {
     var modal = document.getElementById('reportModal');
     if (!modal) return;
-    modal.style.display = 'flex';
+
+    // ── Detectar pantalla actual ANTES de mostrar el modal ──
     var screenNames = { viewHome:'🏠 Inicio', viewDB:'🗂️ Registros', viewForm:'📋 Formulario', viewMap:'🗺️ Mapa' };
     var currentScreen = 'Desconocida';
     ['viewHome','viewDB','viewForm','viewMap'].forEach(function(id) {
@@ -2550,15 +2554,64 @@
     });
     var admDetail = document.getElementById('db-admin-detail-wrap');
     if (admDetail && admDetail.style.display !== 'none') currentScreen = '🏢 Admin — ' + (_adminCurrentClient||'');
+    window._reportCurrentScreen = currentScreen;
+
+    // ── Reset formulario ──
     var label = document.getElementById('report-screen-label');
     if (label) label.textContent = 'Pantalla detectada: ' + currentScreen;
-    window._reportCurrentScreen = currentScreen;
     var desc = document.getElementById('report-desc');
-    if (desc) { desc.value=''; setTimeout(function(){ desc.focus(); },200); }
+    if (desc) desc.value = '';
     var sec = document.getElementById('report-section');
-    if (sec) sec.value='';
-    // Reset tipo a 'error' por defecto
+    if (sec) sec.value = '';
     window.reportSetType && window.reportSetType('error');
+    window._reportScreenshotBlob   = null;
+    window._reportScreenshotDataUrl = null;
+
+    // ── Captura de pantalla ──
+    var wrap    = document.getElementById('report-screenshot-wrap');
+    var state   = document.getElementById('report-screenshot-state');
+    var preview = document.getElementById('report-screenshot-preview');
+    var img     = document.getElementById('report-screenshot-img');
+    if (wrap)    { wrap.style.display = 'block'; }
+    if (state)   { state.style.display = 'flex'; }
+    if (preview) { preview.style.display = 'none'; }
+
+    // Mostrar modal
+    modal.style.display = 'flex';
+    setTimeout(function(){ desc && desc.focus(); }, 250);
+
+    // Capturar la app (excluye el modal que acabamos de abrir)
+    var appEl = document.getElementById('app');
+    if (typeof html2canvas === 'function' && appEl) {
+      html2canvas(appEl, {
+        scale      : 0.35,
+        useCORS    : true,
+        allowTaint : true,
+        logging    : false,
+        ignoreElements: function(el) { return el.id === 'reportModal'; }
+      }).then(function(canvas) {
+        canvas.toBlob(function(blob) {
+          window._reportScreenshotBlob = blob;
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.55);
+          window._reportScreenshotDataUrl = dataUrl;
+          if (img)     { img.src = dataUrl; }
+          if (state)   { state.style.display = 'none'; }
+          if (preview) { preview.style.display = 'block'; }
+        }, 'image/jpeg', 0.55);
+      }).catch(function() {
+        // Si falla silenciosamente, ocultar la sección
+        if (wrap) wrap.style.display = 'none';
+      });
+    } else {
+      if (wrap) wrap.style.display = 'none';
+    }
+  };
+
+  window.reportRemoveScreenshot = function () {
+    window._reportScreenshotBlob   = null;
+    window._reportScreenshotDataUrl = null;
+    var wrap = document.getElementById('report-screenshot-wrap');
+    if (wrap) wrap.style.display = 'none';
   };
 
   window.closeReportModal = function () {
@@ -2600,6 +2653,7 @@
     var tipo  = document.getElementById('report-type-val');
     var text  = desc ? desc.value.trim() : '';
     if (!text) { showNotif('⚠️ Describe el reporte antes de enviar','warning'); return; }
+
     var report = {
       description : text,
       tipo        : tipo ? (tipo.value || 'error') : 'error',
@@ -2610,16 +2664,60 @@
       ts          : Date.now(),
       resolved    : false
     };
-    if (typeof window._fbPushReport === 'function') {
-      window._fbPushReport(report)
-        .then(function() { window.closeReportModal(); showNotif('✅ Reporte enviado'); })
-        .catch(function(e) { showNotif('❌ Error al enviar: ' + (e.message || '')); });
+
+    // Botón en estado cargando
+    var sendBtn = document.querySelector('#reportModal button[onclick="submitReport()"]');
+    if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '⏳ Enviando…'; }
+
+    function _pushReport(r) {
+      if (typeof window._fbPushReport === 'function') {
+        return window._fbPushReport(r)
+          .then(function() { window.closeReportModal(); showNotif('✅ Reporte enviado'); })
+          .catch(function(e) { showNotif('❌ Error al enviar: ' + (e.message || '')); })
+          .finally(function() { if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '📤 Enviar'; } });
+      } else {
+        var stored = JSON.parse(localStorage.getItem('bu_reports') || '[]');
+        stored.push(r);
+        localStorage.setItem('bu_reports', JSON.stringify(stored));
+        window.closeReportModal();
+        showNotif('✅ Reporte guardado');
+        if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '📤 Enviar'; }
+        return Promise.resolve();
+      }
+    }
+
+    var blob = window._reportScreenshotBlob;
+    var dataUrl = window._reportScreenshotDataUrl;
+
+    if (blob) {
+      // Intentar subir a Cloudinary si está configurado
+      var cloudName = window.CLOUDINARY_CLOUD_NAME;
+      var preset    = window.CLOUDINARY_UPLOAD_PRESET;
+      if (cloudName && preset) {
+        var file = new File([blob], 'reporte_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+        var fd = new FormData();
+        fd.append('file', file);
+        fd.append('upload_preset', preset);
+        fd.append('folder', 'reportes');
+        fetch('https://api.cloudinary.com/v1_1/' + cloudName + '/image/upload', { method: 'POST', body: fd })
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (data.secure_url) report.screenshotUrl = data.secure_url;
+            else if (dataUrl) report.screenshotBase64 = dataUrl;
+            return _pushReport(report);
+          })
+          .catch(function() {
+            // Cloudinary falló → guardar base64 comprimido
+            if (dataUrl) report.screenshotBase64 = dataUrl;
+            return _pushReport(report);
+          });
+      } else {
+        // Sin Cloudinary → base64 directo en Firebase
+        if (dataUrl) report.screenshotBase64 = dataUrl;
+        _pushReport(report);
+      }
     } else {
-      var stored = JSON.parse(localStorage.getItem('bu_reports') || '[]');
-      stored.push(report);
-      localStorage.setItem('bu_reports', JSON.stringify(stored));
-      window.closeReportModal();
-      showNotif('✅ Reporte guardado');
+      _pushReport(report);
     }
   };
 
