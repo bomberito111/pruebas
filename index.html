@@ -346,7 +346,8 @@ body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--paper,#fa
             <div id="db-admin-detail-title" style="font-family:'Fraunces',serif;font-size:16px;font-weight:900;color:#0f3320;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</div>
           </div>
           <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch">
-            <button id="db-admtab-mapa"   onclick="dbAdminTab('mapa')"   style="flex-shrink:0;padding:7px 14px;background:#0f3320;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'IBM Plex Sans',sans-serif">🗺️ Mapa</button>
+            <button id="db-admtab-resumen" onclick="dbAdminTab('resumen')" style="flex-shrink:0;padding:7px 14px;background:#0f3320;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:'IBM Plex Sans',sans-serif">📊 Resumen</button>
+            <button id="db-admtab-mapa"   onclick="dbAdminTab('mapa')"   style="flex-shrink:0;padding:7px 14px;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:'IBM Plex Sans',sans-serif">🗺️ Mapa</button>
             <button id="db-admtab-portal" onclick="dbAdminTab('portal')" style="flex-shrink:0;padding:7px 14px;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:'IBM Plex Sans',sans-serif">👁️ Portal</button>
             <button id="db-admtab-chat"   onclick="dbAdminTab('chat')"   style="flex-shrink:0;padding:7px 14px;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:'IBM Plex Sans',sans-serif">💬 Chat</button>
             <button id="db-admtab-cuenta" onclick="dbAdminTab('cuenta')" style="flex-shrink:0;padding:7px 14px;background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:'IBM Plex Sans',sans-serif">👤 Cuenta</button>
@@ -437,8 +438,8 @@ body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--paper,#fa
 
   </div><!-- end views-wrap -->
 
-  <!-- 🐛 Report bug button (floating) -->
-  <button id="reportBugBtn" onclick="openReportModal()" title="Reportar un problema" style="position:absolute;bottom:72px;right:12px;z-index:800;width:38px;height:38px;border-radius:50%;background:#fff;border:1.5px solid #e5e0d8;box-shadow:0 2px 10px rgba(0,0,0,.15);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent" aria-label="Reportar problema">🐛</button>
+  <!-- 🐛 Report button (hidden — trigger via shake only) -->
+  <button id="reportBugBtn" onclick="openReportModal()" title="Reportar un problema" style="display:none" aria-label="Reportar problema">🐛</button>
 
   <!-- ═══ BOTTOM NAV ═══ -->
   <nav id="mainNav" class="bottom-nav">
@@ -447,6 +448,9 @@ body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--paper,#fa
     </button>
     <button class="nav-tab" id="tab-db" onclick="switchTab('db')">
       <div class="nav-icon">🗂️</div><div class="nav-label">Registros</div>
+    </button>
+    <button class="nav-tab" id="tab-admin" onclick="switchTab('admin')" style="display:none">
+      <div class="nav-icon">⚙️</div><div class="nav-label">Admin</div>
     </button>
   </nav>
 

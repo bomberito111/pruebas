@@ -1693,14 +1693,16 @@
     }
   };
 
+
   // ═══════════════════════════════════════════════════════
   // ADMIN SECTION — Administración de Clientes
   // ═══════════════════════════════════════════════════════
 
   var _adminMapInstance   = null;
   var _adminCurrentClient = null;
-  var _adminCurrentTab    = 'mapa';
+  var _adminCurrentTab    = 'resumen';
   var _adminChatUnsub     = null;
+  var _adminPortalCfgCache = null;
 
   function _fsKeyAdmin(name) {
     if (typeof window._fsKey === 'function') return window._fsKey(name);
@@ -1713,18 +1715,13 @@
 
   /* ── Show/hide admin tab bar based on role ── */
   window._dbCheckAdminTabBar = function () {
-    var role = window.APP && window.APP.activeRole;
+    var role = window.APP && (window.APP.userRole || window.APP.activeRole);
     var bar  = document.getElementById('db-section-tabs');
     if (bar) bar.style.display = (role === 'admin' || role === 'programador') ? 'block' : 'none';
-    // Also reset admin tab styling
     var tabR = document.getElementById('db-tab-records');
     var tabA = document.getElementById('db-tab-admin');
-    if (tabR) tabR.style.borderBottom = '2.5px solid #0f3320';
-    if (tabR) tabR.style.color = '#0f3320';
-    if (tabR) tabR.style.fontWeight = '700';
-    if (tabA) tabA.style.borderBottom = '2.5px solid transparent';
-    if (tabA) tabA.style.color = '#9ca3af';
-    if (tabA) tabA.style.fontWeight = '600';
+    if (tabR) { tabR.style.borderBottom = '2.5px solid #0f3320'; tabR.style.color = '#0f3320'; tabR.style.fontWeight = '700'; }
+    if (tabA) { tabA.style.borderBottom = '2.5px solid transparent'; tabA.style.color = '#9ca3af'; tabA.style.fontWeight = '600'; }
   };
 
   /* ── Switch between Records and Admin sections ── */
@@ -1736,13 +1733,9 @@
     var admDetail = document.getElementById('db-admin-detail-wrap');
     var tabR = document.getElementById('db-tab-records');
     var tabA = document.getElementById('db-tab-admin');
-
-    // Active tab style
-    var ACT = '2.5px solid #0f3320';
-    var OFF = '2.5px solid transparent';
+    var ACT = '2.5px solid #0f3320', OFF = '2.5px solid transparent';
     if (tabR) { tabR.style.borderBottom = section === 'records' ? ACT : OFF; tabR.style.color = section === 'records' ? '#0f3320' : '#9ca3af'; tabR.style.fontWeight = section === 'records' ? '700' : '600'; }
     if (tabA) { tabA.style.borderBottom = section === 'admin'   ? ACT : OFF; tabA.style.color = section === 'admin'   ? '#0f3320' : '#9ca3af'; tabA.style.fontWeight = section === 'admin'   ? '700' : '600'; }
-
     if (section === 'records') {
       if (lv1) lv1.style.display = 'flex';
       if (lv2) lv2.style.display = 'none';
@@ -1759,18 +1752,41 @@
     }
   };
 
+  /* ── Build tree map for a client ── */
+  function _buildClientTreeMap(clientName) {
+    var db2 = window._dbAll || {};
+    var treeBest = {};
+    Object.keys(db2).forEach(function (key) {
+      var ev  = db2[key];
+      var cli = (typeof window.getClientName === 'function'
+        ? window.getClientName(ev)
+        : (ev.cliente || (ev.answers && ev.answers.cliente) || '')).trim();
+      if (cli.toLowerCase() !== (clientName || '').toLowerCase()) return;
+      var aid = ev.arbolId || (ev.answers && ev.answers.arbolId) || key;
+      if (!treeBest[aid] || (ev.timestamp || 0) > (treeBest[aid].timestamp || 0)) {
+        treeBest[aid] = Object.assign({}, ev, { _arbolId: aid, _key: key });
+      }
+    });
+    return treeBest;
+  }
+
+  function _extractGPSAdmin(ev) {
+    var g = ev.gps || (ev.answers && ev.answers.gps) || '';
+    if (!g && ev.lat && ev.lng) g = ev.lat + ',' + ev.lng;
+    if (!g && ev.answers && ev.answers.lat && ev.answers.lng) g = ev.answers.lat + ',' + ev.answers.lng;
+    if (g && typeof g === 'object' && g.lat) g = g.lat + ',' + g.lng;
+    return (typeof g === 'string' && g.indexOf(',') > 0) ? g : null;
+  }
+
   /* ── Render client admin list ── */
   window.dbRenderAdminClients = function () {
     var container = document.getElementById('db-admin-list');
     if (!container) return;
-
     var searchEl = document.getElementById('admin-client-search');
     var query    = searchEl ? searchEl.value.trim().toLowerCase() : '';
-
     var db2         = window._dbAll       || {};
     var clientesAll = window._clientesAll || {};
 
-    // Build client map
     var clientMap = {};
     Object.keys(db2).forEach(function (key) {
       var ev   = db2[key];
@@ -1808,44 +1824,58 @@
       var enc       = encodeURIComponent(c.name);
       var letter    = c.name.charAt(0).toUpperCase();
 
-      // Risk summary
       var riskCounts = { bajo: 0, moderado: 0, alto: 0, extremo: 0 };
       var riskLevels = [];
+      var lastTs = 0;
       Object.values(c.trees).forEach(function (evs) {
         evs.sort(function (a, b) { return (b.ev.timestamp || 0) - (a.ev.timestamp || 0); });
         var r = getEffRisk(evs[0].ev);
         riskCounts[r] = (riskCounts[r] || 0) + 1;
         riskLevels.push(r);
+        var t = evs[0].ev.timestamp || 0;
+        if (t > lastTs) lastTs = t;
       });
       var worst  = worstRisk(riskLevels) || 'bajo';
       var wColor = getRiskColor(worst);
+      var extremoCount = riskCounts.extremo || 0;
+      var altoCount    = riskCounts.alto    || 0;
 
-      // Risk bar
       var barHtml = '';
       ['bajo', 'moderado', 'alto', 'extremo'].forEach(function (r) {
         if (riskCounts[r] > 0) barHtml += '<div style="flex:' + riskCounts[r] + ';background:' + getRiskColor(r) + ';height:100%"></div>';
       });
 
+      // Alert badge
+      var alertBadge = '';
+      if (extremoCount > 0) alertBadge = '<span style="padding:2px 8px;background:#fee2e2;color:#b91c1c;border-radius:12px;font-size:10px;font-weight:800">🔴 ' + extremoCount + ' extremo</span>';
+      else if (altoCount > 0) alertBadge = '<span style="padding:2px 8px;background:#ffedd5;color:#c2410c;border-radius:12px;font-size:10px;font-weight:700">🟠 ' + altoCount + ' alto</span>';
+
       html += '<div style="background:#fff;border:1.5px solid #e5e7eb;border-radius:16px;margin-bottom:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06)">';
 
-      // Header row
+      // Header
       html += '<div style="display:flex;align-items:center;gap:12px;padding:14px">';
-      html += '<div style="width:48px;height:48px;border-radius:13px;background:linear-gradient(135deg,#0f3320 0%,#22c55e 100%);font-size:22px;font-weight:900;color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:Georgia,serif">' + letter + '</div>';
+      html += '<div style="width:50px;height:50px;border-radius:14px;background:linear-gradient(135deg,#0f3320 0%,#22c55e 100%);font-size:22px;font-weight:900;color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:Georgia,serif">' + letter + '</div>';
       html += '<div style="flex:1;min-width:0">';
       html += '<div style="font-family:Georgia,serif;font-size:16px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _escAdmin(c.name) + '</div>';
-      html += '<div style="font-size:11px;color:#6b7280;margin-top:3px">' + treeCount + ' árbol' + (treeCount !== 1 ? 'es' : '') + ' · ' + evalCount + ' evaluaci' + (evalCount !== 1 ? 'ones' : 'ón') + '</div>';
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap">';
+      html += '<span style="font-size:11px;color:#6b7280">' + treeCount + ' árbol' + (treeCount !== 1 ? 'es' : '') + '</span>';
+      html += '<span style="font-size:10px;color:#d1d5db">•</span>';
+      html += '<span style="font-size:11px;color:#6b7280">' + fmtDate(lastTs) + '</span>';
+      if (alertBadge) html += alertBadge;
       html += '</div>';
-      html += '<span style="padding:3px 10px;background:' + wColor + '22;color:' + wColor + ';border-radius:20px;font-size:10px;font-weight:800;flex-shrink:0;text-transform:uppercase">' + getRiskLabel(worst) + '</span>';
+      html += '</div>';
+      html += '<span style="padding:3px 10px;background:' + wColor + '22;color:' + wColor + ';border-radius:20px;font-size:10px;font-weight:800;flex-shrink:0;text-transform:uppercase;letter-spacing:.04em">' + getRiskLabel(worst) + '</span>';
       html += '</div>';
 
       // Risk bar
-      if (barHtml) html += '<div style="height:4px;display:flex;width:100%">' + barHtml + '</div>';
+      if (barHtml) html += '<div style="height:5px;display:flex;width:100%">' + barHtml + '</div>';
 
-      // Action buttons
-      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px 14px;background:#fafaf8;border-top:1px solid #f0ede8">';
-      html += '<button onclick="dbOpenAdminClient(\'' + enc + '\',\'mapa\')" style="padding:10px;background:#0f3320;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">🗺️ Mapa</button>';
-      html += '<button onclick="dbOpenAdminClient(\'' + enc + '\',\'portal\')" style="padding:10px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #bfdbfe;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">👁️ Portal</button>';
-      html += '<button onclick="dbOpenAdminClient(\'' + enc + '\',\'cuenta\')" style="padding:10px;background:#f0fdf4;color:#15803d;border:1.5px solid #86efac;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">👤 Cuenta</button>';
+      // Action buttons grid
+      html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px 12px;background:#fafaf8;border-top:1px solid #f0ede8">';
+      html += '<button onclick="dbOpenAdminClient(\'' + enc + '\',\'resumen\')" style="padding:9px 4px;background:#0f3320;color:#fff;border:none;border-radius:9px;font-weight:700;font-size:11px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;text-align:center">📊<br>Resumen</button>';
+      html += '<button onclick="dbOpenAdminClient(\'' + enc + '\',\'mapa\')" style="padding:9px 4px;background:#f0f9ff;color:#0284c7;border:1.5px solid #bae6fd;border-radius:9px;font-weight:700;font-size:11px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;text-align:center">🗺️<br>Mapa</button>';
+      html += '<button onclick="dbOpenAdminClient(\'' + enc + '\',\'portal\')" style="padding:9px 4px;background:#f0fdf4;color:#15803d;border:1.5px solid #86efac;border-radius:9px;font-weight:700;font-size:11px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;text-align:center">👁️<br>Portal</button>';
+      html += '<button onclick="dbOpenAdminClient(\'' + enc + '\',\'cuenta\')" style="padding:9px 4px;background:#faf5ff;color:#7c3aed;border:1.5px solid #ddd6fe;border-radius:9px;font-weight:700;font-size:11px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;text-align:center">👤<br>Cuenta</button>';
       html += '</div>';
       html += '</div>';
     });
@@ -1855,8 +1885,9 @@
 
   /* ── Open admin client detail ── */
   window.dbOpenAdminClient = function (enc, defaultTab) {
-    _adminCurrentClient = decodeURIComponent(enc);
-    _adminCurrentTab    = defaultTab || 'mapa';
+    _adminCurrentClient  = decodeURIComponent(enc);
+    _adminCurrentTab     = defaultTab || 'resumen';
+    _adminPortalCfgCache = null;
 
     var listWrap   = document.getElementById('db-admin-list-wrap');
     var detailWrap = document.getElementById('db-admin-detail-wrap');
@@ -1871,83 +1902,212 @@
 
   /* ── Back from detail to list ── */
   window.dbAdminBack = function () {
-    // Destroy map
-    if (_adminMapInstance) {
-      try { _adminMapInstance.remove(); } catch (e) {}
-      _adminMapInstance = null;
-    }
-    // Unsubscribe chat
-    if (_adminChatUnsub) {
-      try { _adminChatUnsub(); } catch (e) {}
-      _adminChatUnsub = null;
-    }
-
+    if (_adminMapInstance) { try { _adminMapInstance.remove(); } catch (e) {} _adminMapInstance = null; }
+    if (_adminChatUnsub)   { try { _adminChatUnsub(); }          catch (e) {} _adminChatUnsub = null;   }
     var listWrap   = document.getElementById('db-admin-list-wrap');
     var detailWrap = document.getElementById('db-admin-detail-wrap');
     if (listWrap)   listWrap.style.display   = 'flex';
     if (detailWrap) detailWrap.style.display = 'none';
   };
 
-  /* ── Switch sub-tab in detail view ── */
+  /* ── Switch sub-tab ── */
   window.dbAdminTab = function (tab) {
     _adminCurrentTab = tab;
-
-    // Update button styles
-    ['mapa', 'portal', 'chat', 'cuenta'].forEach(function (t) {
+    ['resumen', 'mapa', 'portal', 'chat', 'cuenta'].forEach(function (t) {
       var btn = document.getElementById('db-admtab-' + t);
       if (!btn) return;
       var active = t === tab;
-      btn.style.background  = active ? '#0f3320' : '#f3f4f6';
-      btn.style.color       = active ? '#fff'     : '#6b7280';
-      btn.style.border      = active ? 'none'     : '1px solid #e5e7eb';
-      btn.style.fontWeight  = active ? '700'      : '600';
+      btn.style.background = active ? '#0f3320' : '#f3f4f6';
+      btn.style.color      = active ? '#fff'     : '#6b7280';
+      btn.style.border     = active ? 'none'     : '1px solid #e5e7eb';
+      btn.style.fontWeight = active ? '700'      : '600';
     });
 
     var content = document.getElementById('db-admin-detail-content');
     if (!content) return;
 
-    // Cleanup on tab switch
-    if (tab !== 'mapa' && _adminMapInstance) {
-      try { _adminMapInstance.remove(); } catch (e) {}
-      _adminMapInstance = null;
-    }
-    if (tab !== 'chat' && _adminChatUnsub) {
-      try { _adminChatUnsub(); } catch (e) {}
-      _adminChatUnsub = null;
-    }
+    if (tab !== 'mapa' && _adminMapInstance) { try { _adminMapInstance.remove(); } catch (e) {} _adminMapInstance = null; }
+    if (tab !== 'chat' && _adminChatUnsub)   { try { _adminChatUnsub(); }          catch (e) {} _adminChatUnsub = null;   }
 
     content.style.display       = 'flex';
     content.style.flexDirection = 'column';
     content.style.overflowY     = 'auto';
+    content.style.flex          = '1';
+    content.style.minHeight     = '0';
 
-    if (tab === 'mapa')   _renderAdminMap(content);
-    else if (tab === 'portal') _renderAdminPortal(content);
-    else if (tab === 'chat')   _renderAdminChat(content);
-    else if (tab === 'cuenta') _renderAdminCuenta(content);
+    if      (tab === 'resumen') _renderAdminResumen(content);
+    else if (tab === 'mapa')    _renderAdminMap(content);
+    else if (tab === 'portal')  _renderAdminPortal(content);
+    else if (tab === 'chat')    _renderAdminChat(content);
+    else if (tab === 'cuenta')  _renderAdminCuenta(content);
   };
 
-  /* ── MAP TAB ── */
+  /* ═══ TAB: RESUMEN ═══ */
+  function _renderAdminResumen(content) {
+    content.style.display       = 'block';
+    content.style.flexDirection = '';
+    content.innerHTML = '<div style="padding:14px 14px 80px">' +
+      '<div style="text-align:center;color:#9ca3af;padding:20px;font-size:13px">Cargando resumen...</div></div>';
+
+    var clientName = _adminCurrentClient;
+    var treeBest   = _buildClientTreeMap(clientName);
+    var trees      = Object.values(treeBest);
+    var totalTrees = trees.length;
+    var clientKey  = _fsKeyAdmin(clientName);
+
+    var riskCounts = { bajo: 0, moderado: 0, alto: 0, extremo: 0 };
+    var gpsCount   = 0;
+    var lastTs     = 0;
+    trees.forEach(function (ev) {
+      var r = getEffRisk(ev);
+      riskCounts[r] = (riskCounts[r] || 0) + 1;
+      if (_extractGPSAdmin(ev)) gpsCount++;
+      var t = ev.timestamp || ev.ts || 0;
+      if (t > lastTs) lastTs = t;
+    });
+
+    var worst  = worstRisk(trees.map(function (ev) { return getEffRisk(ev); })) || 'bajo';
+    var wColor = getRiskColor(worst);
+
+    // Load portal config to show portal stats
+    var portalCfgLoaded = _adminPortalCfgCache;
+    function _buildResumenHtml(portalCfg) {
+      var treesConfig   = (portalCfg && portalCfg.trees) || {};
+      var portalVisible = 0;
+      trees.forEach(function (ev) {
+        var ak = _fsKeyAdmin(ev._arbolId || '');
+        if (treesConfig[ak] && treesConfig[ak].visible) portalVisible++;
+      });
+
+      var html = '<div style="padding:14px 14px 80px">';
+
+      // Stats banner
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">';
+      html += _admStatCard(String(totalTrees), 'Árboles evaluados', '#0f3320', '🌳');
+      html += _admStatCard(String(gpsCount) + ' / ' + totalTrees, 'Con GPS', '#0ea5e9', '📍');
+      html += _admStatCard(String(portalVisible) + ' / ' + totalTrees, 'Visibles en portal', '#7c3aed', '👁️');
+      html += _admStatCard(fmtDate(lastTs) || '—', 'Última evaluación', '#6b7280', '📅');
+      html += '</div>';
+
+      // Risk breakdown
+      var RCOLS2 = { bajo: '#22c55e', moderado: '#f59e0b', alto: '#f97316', extremo: '#b91c1c' };
+      html += '<div style="background:#fff;border:1.5px solid #e5e7eb;border-radius:14px;padding:14px;margin-bottom:14px">';
+      html += '<div style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">📊 Distribución de riesgo</div>';
+      if (totalTrees === 0) {
+        html += '<div style="text-align:center;color:#9ca3af;font-size:13px;padding:10px">Sin datos</div>';
+      } else {
+        ['extremo', 'alto', 'moderado', 'bajo'].forEach(function (r) {
+          var count = riskCounts[r] || 0;
+          var pct   = Math.round(count / totalTrees * 100);
+          var color = RCOLS2[r];
+          html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
+          html += '<div style="width:74px;font-size:12px;font-weight:700;color:' + color + '">' + getRiskLabel(r) + '</div>';
+          html += '<div style="flex:1;height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden"><div style="height:100%;background:' + color + ';width:' + pct + '%;border-radius:5px;transition:width .4s"></div></div>';
+          html += '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:13px;font-weight:800;color:' + color + ';width:28px;text-align:right">' + count + '</div>';
+          html += '</div>';
+        });
+      }
+      html += '</div>';
+
+      // Tree inventory table
+      html += '<div style="background:#fff;border:1.5px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:14px">';
+      html += '<div style="padding:12px 14px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between">';
+      html += '<div style="font-size:12px;font-weight:700;color:#374151">🌳 Inventario (' + totalTrees + ')</div>';
+      html += '<button onclick="dbOpenClient(\'' + encodeURIComponent(clientName) + '\')" style="padding:5px 12px;background:#f0fdf4;color:#15803d;border:1px solid #86efac;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">Ver en Registros →</button>';
+      html += '</div>';
+
+      if (trees.length === 0) {
+        html += '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px">Sin evaluaciones registradas</div>';
+      } else {
+        // Sort by worst risk first
+        var sortedTrees = trees.slice().sort(function (a, b) {
+          var ra = RISK_ORDER[getEffRisk(a)] || 0;
+          var rb = RISK_ORDER[getEffRisk(b)] || 0;
+          return rb - ra;
+        });
+        sortedTrees.forEach(function (ev) {
+          var aid     = ev._arbolId || ev.arbolId || (ev.answers && ev.answers.arbolId) || '?';
+          var esp     = ev.especie || (ev.answers && ev.answers.especie) || '—';
+          var risk    = getEffRisk(ev);
+          var rColor  = getRiskColor(risk);
+          var ts      = ev.timestamp || ev.ts || 0;
+          var hasGps  = !!_extractGPSAdmin(ev);
+          var ak      = _fsKeyAdmin(aid);
+          var inPortal = treesConfig[ak] && treesConfig[ak].visible;
+
+          html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f9f9f9">';
+          html += '<div style="width:10px;height:10px;border-radius:50%;background:' + rColor + ';flex-shrink:0"></div>';
+          html += '<div style="flex:1;min-width:0">';
+          html += '<div style="font-size:13px;font-weight:600;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _escAdmin(aid) + '</div>';
+          html += '<div style="font-size:11px;color:#9ca3af;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic">' + _escAdmin(esp) + '</div>';
+          html += '</div>';
+          html += '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">';
+          html += '<span style="padding:2px 8px;background:' + rColor + '1a;color:' + rColor + ';border-radius:10px;font-size:10px;font-weight:800">' + getRiskLabel(risk) + '</span>';
+          html += '<div style="display:flex;gap:4px">';
+          html += '<span style="font-size:10px;color:' + (hasGps ? '#0ea5e9' : '#d1d5db') + '">' + (hasGps ? '📍' : '—') + '</span>';
+          html += '<span style="font-size:10px;color:' + (inPortal ? '#22c55e' : '#d1d5db') + '">' + (inPortal ? '👁️' : '—') + '</span>';
+          html += '<span style="font-size:10px;color:#9ca3af">' + fmtDate(ts) + '</span>';
+          html += '</div>';
+          html += '</div>';
+          html += '</div>';
+        });
+      }
+      html += '</div>';
+
+      // Quick actions
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+      html += '<button onclick="dbAdminTab(\'portal\')" style="padding:12px;background:#f0fdf4;color:#0f3320;border:1.5px solid #86efac;border-radius:12px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">👁️ Configurar portal</button>';
+      html += '<button onclick="dbAdminTab(\'mapa\')" style="padding:12px;background:#f0f9ff;color:#0284c7;border:1.5px solid #bae6fd;border-radius:12px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">🗺️ Ver en mapa</button>';
+      html += '</div>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+      html += '<button onclick="dbAdminTab(\'chat\')" style="padding:12px;background:#faf5ff;color:#7c3aed;border:1.5px solid #ddd6fe;border-radius:12px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">💬 Ir al chat</button>';
+      html += '<button onclick="dbAdminTab(\'cuenta\')" style="padding:12px;background:#f8fafc;color:#475569;border:1.5px solid #e2e8f0;border-radius:12px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">👤 Cuenta</button>';
+      html += '</div>';
+
+      html += '</div>';
+      content.innerHTML = html;
+    }
+
+    if (portalCfgLoaded !== null) {
+      _buildResumenHtml(portalCfgLoaded);
+    } else if (typeof window._fbGetPortalConfig === 'function') {
+      window._fbGetPortalConfig(clientKey, function (snap) {
+        _adminPortalCfgCache = (snap && snap.val ? snap.val() : null) || {};
+        _buildResumenHtml(_adminPortalCfgCache);
+      });
+    } else {
+      _buildResumenHtml({});
+    }
+  }
+
+  function _admStatCard(value, label, color, icon) {
+    return '<div style="background:#fff;border:1.5px solid #e5e7eb;border-radius:13px;padding:14px 10px;text-align:center">' +
+      '<div style="font-size:22px;margin-bottom:6px">' + icon + '</div>' +
+      '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:15px;font-weight:900;color:' + color + ';line-height:1.1">' + value + '</div>' +
+      '<div style="font-size:10px;color:#9ca3af;font-weight:600;margin-top:4px;line-height:1.3">' + label + '</div>' +
+    '</div>';
+  }
+
+  /* ═══ TAB: MAPA ═══ */
   function _renderAdminMap(content) {
     var mapType = window._adminMapType || 'satellite';
+    content.style.display       = 'flex';
+    content.style.flexDirection = 'column';
     content.innerHTML =
-      '<div style="background:#f8f7f4;padding:10px 14px;border-bottom:1px solid #e5e7eb;display:flex;gap:8px;align-items:center;flex-shrink:0">' +
-        '<button id="admin-map-sat" onclick="window._adminSwitchMap(\'satellite\')" style="padding:6px 14px;background:' + (mapType === 'satellite' ? '#0f3320' : '#f3f4f6') + ';color:' + (mapType === 'satellite' ? '#fff' : '#6b7280') + ';border:' + (mapType === 'satellite' ? 'none' : '1px solid #e5e7eb') + ';border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">🛰️ Satélite</button>' +
-        '<button id="admin-map-nor" onclick="window._adminSwitchMap(\'normal\')" style="padding:6px 14px;background:' + (mapType === 'normal' ? '#0f3320' : '#f3f4f6') + ';color:' + (mapType === 'normal' ? '#fff' : '#6b7280') + ';border:' + (mapType === 'normal' ? 'none' : '1px solid #e5e7eb') + ';border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">🗺️ Normal</button>' +
+      '<div style="background:#fff;padding:10px 14px;border-bottom:1px solid #e5e7eb;display:flex;gap:8px;align-items:center;flex-shrink:0">' +
+        '<button id="admin-map-sat" onclick="window._adminSwitchMap(\'satellite\')" style="padding:7px 14px;background:' + (mapType === 'satellite' ? '#0f3320' : '#f3f4f6') + ';color:' + (mapType === 'satellite' ? '#fff' : '#6b7280') + ';border:' + (mapType === 'satellite' ? 'none' : '1px solid #e5e7eb') + ';border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">🛰️ Satélite</button>' +
+        '<button id="admin-map-nor" onclick="window._adminSwitchMap(\'normal\')" style="padding:7px 14px;background:' + (mapType === 'normal' ? '#0f3320' : '#f3f4f6') + ';color:' + (mapType === 'normal' ? '#fff' : '#6b7280') + ';border:' + (mapType === 'normal' ? 'none' : '1px solid #e5e7eb') + ';border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">🗺️ Normal</button>' +
         '<span id="admin-map-count" style="font-size:11px;color:#6b7280;margin-left:auto"></span>' +
       '</div>' +
-      '<div id="admin-map-el" style="flex:1;min-height:300px;position:relative;background:#e8e4dc"></div>';
+      '<div id="admin-map-el" style="flex:1;min-height:0;position:relative;background:#e8e4dc"></div>';
 
-    setTimeout(function () { _buildAdminMap(); }, 180);
+    setTimeout(function () { _buildAdminMap(); }, 200);
   }
 
   function _buildAdminMap() {
     var mapEl = document.getElementById('admin-map-el');
     if (!mapEl || !window.L) return;
-
-    if (_adminMapInstance) {
-      try { _adminMapInstance.remove(); } catch (e) {}
-      _adminMapInstance = null;
-    }
+    if (_adminMapInstance) { try { _adminMapInstance.remove(); } catch (e) {} _adminMapInstance = null; }
 
     var mapType = window._adminMapType || 'satellite';
     var map = L.map(mapEl, { zoomControl: true, attributionControl: false });
@@ -1955,42 +2115,24 @@
 
     var satTile  = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 });
     var normTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
-
     if (mapType === 'satellite') satTile.addTo(map);
     else normTile.addTo(map);
-
     map._adminSatTile  = satTile;
     map._adminNormTile = normTile;
 
-    var db2    = window._dbAll || {};
-    var RCOLS  = { bajo: '#22c55e', moderado: '#f59e0b', alto: '#f97316', extremo: '#b91c1c' };
-    var markers    = [];
-    var treesSeen  = {};
+    var RCOLS = { bajo: '#22c55e', moderado: '#f59e0b', alto: '#f97316', extremo: '#b91c1c' };
+    var markers   = [];
     var treeCount2 = 0;
+    var treeBest2 = _buildClientTreeMap(_adminCurrentClient);
 
-    // Get latest eval per tree for this client
-    var treeBest = {};
-    Object.keys(db2).forEach(function (key) {
-      var ev      = db2[key];
-      var evCli   = (typeof window.getClientName === 'function'
-        ? window.getClientName(ev)
-        : (ev.cliente || (ev.answers && ev.answers.cliente) || '')).trim();
-      if (evCli.toLowerCase() !== (_adminCurrentClient || '').toLowerCase()) return;
-      var aid = ev.arbolId || (ev.answers && ev.answers.arbolId) || key;
-      if (!treeBest[aid] || (ev.timestamp || 0) > (treeBest[aid].timestamp || 0)) {
-        treeBest[aid] = Object.assign({}, ev, { _arbolId: aid });
-      }
-    });
+    // Load portal config for visual markers
+    var portalTrees = (_adminPortalCfgCache && _adminPortalCfgCache.trees) || {};
 
-    Object.keys(treeBest).forEach(function (aid) {
-      var ev  = treeBest[aid];
-      var gpsStr = ev.gps || (ev.answers && ev.answers.gps) || '';
-      if (!gpsStr && ev.lat && ev.lng) gpsStr = ev.lat + ',' + ev.lng;
-      if (!gpsStr && ev.answers && ev.answers.lat && ev.answers.lng) gpsStr = ev.answers.lat + ',' + ev.answers.lng;
-      if (gpsStr && typeof gpsStr === 'object' && gpsStr.lat) gpsStr = gpsStr.lat + ',' + gpsStr.lng;
-      if (!gpsStr) return;
-
-      var parts = String(gpsStr).split(',');
+    Object.keys(treeBest2).forEach(function (aid) {
+      var ev  = treeBest2[aid];
+      var gps = _extractGPSAdmin(ev);
+      if (!gps) return;
+      var parts = gps.split(',');
       var lat   = parseFloat(parts[0]);
       var lng   = parseFloat(parts[1]);
       if (isNaN(lat) || isNaN(lng)) return;
@@ -1998,21 +2140,27 @@
       var risk    = getEffRisk(ev);
       var color   = RCOLS[risk] || '#22c55e';
       var especie = ev.especie || (ev.answers && ev.answers.especie) || '?';
+      var ak      = _fsKeyAdmin(aid);
+      var inPortal = portalTrees[ak] && portalTrees[ak].visible;
+      var adminNote = (portalTrees[ak] && portalTrees[ak].adminNote) || '';
 
       var icon = L.divIcon({
         className: '',
-        html: '<div style="width:30px;height:30px;border-radius:50%;background:' + color + ';border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:13px">🌳</div>',
-        iconSize: [30, 30], iconAnchor: [15, 15]
+        html: '<div style="width:32px;height:32px;border-radius:50%;background:' + color + ';border:' + (inPortal ? '3px solid #fff' : '2px dashed rgba(255,255,255,.6)') + ';box-shadow:0 2px 8px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:14px;opacity:' + (inPortal ? '1' : '0.65') + '">' + (inPortal ? '🌳' : '🌲') + '</div>',
+        iconSize: [32, 32], iconAnchor: [16, 16]
       });
 
-      var marker = L.marker([lat, lng], { icon: icon });
-      marker.bindPopup(
+      var popupHtml =
         '<div style="font-family:\'IBM Plex Sans\',sans-serif;min-width:160px">' +
           '<div style="font-weight:700;font-size:14px;color:#0f3320;margin-bottom:3px">' + _escAdmin(aid) + '</div>' +
-          '<div style="font-size:12px;color:#6b7280;margin-bottom:6px">' + _escAdmin(especie) + '</div>' +
+          '<div style="font-size:12px;color:#6b7280;font-style:italic;margin-bottom:6px">' + _escAdmin(especie) + '</div>' +
           '<span style="padding:2px 10px;background:' + color + ';color:#fff;border-radius:20px;font-size:11px;font-weight:700">' + getRiskLabel(risk) + '</span>' +
-        '</div>'
-      );
+          (inPortal ? '<div style="margin-top:6px;font-size:11px;color:#0f3320;font-weight:600">✅ Visible en portal</div>' : '<div style="margin-top:6px;font-size:11px;color:#9ca3af">🚫 Oculto en portal</div>') +
+          (adminNote ? '<div style="margin-top:4px;font-size:11px;color:#6b7280;font-style:italic">' + _escAdmin(adminNote) + '</div>' : '') +
+        '</div>';
+
+      var marker = L.marker([lat, lng], { icon: icon });
+      marker.bindPopup(popupHtml);
       marker.addTo(map);
       markers.push(marker);
       treeCount2++;
@@ -2021,11 +2169,8 @@
     var countEl = document.getElementById('admin-map-count');
     if (countEl) countEl.textContent = treeCount2 + ' árbol' + (treeCount2 !== 1 ? 'es' : '') + ' con GPS';
 
-    if (markers.length > 0) {
-      map.fitBounds(L.featureGroup(markers).getBounds().pad(0.3));
-    } else {
-      map.setView([-34.0, -70.6], 10);
-    }
+    if (markers.length > 0) map.fitBounds(L.featureGroup(markers).getBounds().pad(0.3));
+    else map.setView([-34.0, -70.6], 10);
   }
 
   window._adminSwitchMap = function (type) {
@@ -2035,47 +2180,64 @@
     if (sat) { sat.style.background = type === 'satellite' ? '#0f3320' : '#f3f4f6'; sat.style.color = type === 'satellite' ? '#fff' : '#6b7280'; sat.style.border = type === 'satellite' ? 'none' : '1px solid #e5e7eb'; }
     if (nor) { nor.style.background = type === 'normal'    ? '#0f3320' : '#f3f4f6'; nor.style.color = type === 'normal'    ? '#fff' : '#6b7280'; nor.style.border = type === 'normal'    ? 'none' : '1px solid #e5e7eb'; }
     if (!_adminMapInstance) return;
-    if (type === 'satellite') {
-      if (_adminMapInstance._adminNormTile) _adminMapInstance._adminNormTile.remove();
-      if (_adminMapInstance._adminSatTile)  _adminMapInstance._adminSatTile.addTo(_adminMapInstance);
-    } else {
-      if (_adminMapInstance._adminSatTile)  _adminMapInstance._adminSatTile.remove();
-      if (_adminMapInstance._adminNormTile) _adminMapInstance._adminNormTile.addTo(_adminMapInstance);
-    }
+    if (type === 'satellite') { if (_adminMapInstance._adminNormTile) _adminMapInstance._adminNormTile.remove(); if (_adminMapInstance._adminSatTile) _adminMapInstance._adminSatTile.addTo(_adminMapInstance); }
+    else { if (_adminMapInstance._adminSatTile) _adminMapInstance._adminSatTile.remove(); if (_adminMapInstance._adminNormTile) _adminMapInstance._adminNormTile.addTo(_adminMapInstance); }
   };
 
-  /* ── PORTAL TAB ── */
+  /* ═══ TAB: PORTAL ═══ */
   function _renderAdminPortal(content) {
-    content.innerHTML = '<div id="pcm-inline-body" style="flex:1;overflow-y:auto;padding-bottom:20px"></div>';
+    content.style.display       = 'flex';
+    content.style.flexDirection = 'column';
+    content.innerHTML =
+      '<div style="background:#f0fdf4;padding:10px 14px;border-bottom:1px solid #86efac;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
+        '<div style="font-size:12px;font-weight:700;color:#15803d">👁️ Portal de <strong>' + _escAdmin(_adminCurrentClient) + '</strong></div>' +
+        '<button onclick="var ck=window._fsKey(\'' + _escAdmin(_adminCurrentClient) + '\');window._pcmSaveAll(ck);window._adminPortalCfgCache=null" style="padding:7px 16px;background:#0f3320;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">💾 Guardar todo</button>' +
+      '</div>' +
+      '<div id="pcm-inline-body" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>';
+
     if (typeof window._pcmLoadForClient === 'function') {
       window._pcmLoadForClient(_adminCurrentClient, 'pcm-inline-body');
     } else {
-      document.getElementById('pcm-inline-body').innerHTML =
+      var fallback = document.getElementById('pcm-inline-body');
+      if (fallback) fallback.innerHTML =
         '<div style="padding:20px;text-align:center">' +
-          '<div style="font-size:14px;color:#6b7280;margin-bottom:14px">Para configurar el portal de <strong>' + _escAdmin(_adminCurrentClient) + '</strong>, usa el botón de abajo.</div>' +
           '<button onclick="window.openPortalConfigEditor(\'' + _escAdmin(_adminCurrentClient) + '\')" style="padding:12px 24px;background:#0f3320;color:#fff;border:none;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">⚙️ Abrir configuración de portal</button>' +
         '</div>';
     }
   }
 
-  /* ── CHAT TAB ── */
+  /* ═══ TAB: CHAT ═══ */
   function _renderAdminChat(content) {
     var clientKey = _fsKeyAdmin(_adminCurrentClient);
+    content.style.display       = 'flex';
+    content.style.flexDirection = 'column';
     content.innerHTML =
-      '<div id="admin-chat-msgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch;min-height:0">' +
+      '<div style="background:#fff;padding:10px 14px;border-bottom:1px solid #e5e7eb;flex-shrink:0">' +
+        '<div style="font-size:12px;font-weight:700;color:#374151">💬 Chat con ' + _escAdmin(_adminCurrentClient) + '</div>' +
+        '<div style="font-size:11px;color:#9ca3af;margin-top:2px">Los mensajes llegan al portal del cliente en tiempo real</div>' +
+      '</div>' +
+      '<div id="admin-chat-msgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;min-height:0;background:#faf9f5">' +
         '<div style="text-align:center;color:#9ca3af;font-size:13px;padding:20px">Cargando mensajes...</div>' +
       '</div>' +
       '<div style="padding:10px 14px;background:#fff;border-top:1px solid #e5e7eb;display:flex;gap:8px;flex-shrink:0">' +
-        '<input type="text" id="admin-chat-input" placeholder="Mensaje al cliente…" ' +
-          'style="flex:1;padding:10px 12px;border:1.5px solid #d1d5db;border-radius:10px;font-family:\'IBM Plex Sans\',sans-serif;font-size:13px;outline:none;background:#faf9f5" ' +
+        '<input type="text" id="admin-chat-input" placeholder="Escribe un mensaje al cliente…" ' +
+          'style="flex:1;padding:11px 13px;border:1.5px solid #d1d5db;border-radius:12px;font-family:\'IBM Plex Sans\',sans-serif;font-size:13px;outline:none;background:#faf9f5" ' +
           'onkeypress="if(event.key===\'Enter\')window.dbAdminSendChat()">' +
-        '<button onclick="window.dbAdminSendChat()" style="padding:10px 16px;background:#0f3320;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">Enviar</button>' +
+        '<button onclick="window.dbAdminSendChat()" style="padding:11px 18px;background:#0f3320;color:#fff;border:none;border-radius:12px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">Enviar</button>' +
       '</div>';
 
     if (typeof window._fbOnChat === 'function') {
       _adminChatUnsub = window._fbOnChat(clientKey, function (snap) {
-        var msgs = snap && snap.val ? snap.val() : null;
-        _renderAdminChatMsgs(msgs);
+        _renderAdminChatMsgs(snap && snap.val ? snap.val() : null);
+        // Mark notifs as read
+        if (typeof window._fbMarkNotifRead === 'function' && snap && snap.val) {
+          var msgs = snap.val();
+          Object.keys(msgs || {}).forEach(function (k) {
+            if (msgs[k] && msgs[k].from === 'cliente' && !msgs[k].read) {
+              window._fbMarkNotifRead && window._fbMarkNotifRead(k);
+            }
+          });
+        }
       });
     } else {
       var msgEl = document.getElementById('admin-chat-msgs');
@@ -2087,21 +2249,28 @@
     var container = document.getElementById('admin-chat-msgs');
     if (!container) return;
     if (!msgs || Object.keys(msgs).length === 0) {
-      container.innerHTML = '<div style="text-align:center;color:#9ca3af;font-size:13px;padding:20px">Sin mensajes aún. ¡Escribe el primero!</div>';
+      container.innerHTML =
+        '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;gap:8px">' +
+          '<div style="font-size:36px">💬</div>' +
+          '<div style="font-size:14px;font-weight:600;color:#374151">Sin mensajes aún</div>' +
+          '<div style="font-size:12px;color:#9ca3af;text-align:center">El cliente recibirá tus mensajes en su portal</div>' +
+        '</div>';
       return;
     }
-    var list = Object.values(msgs).sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); });
+    var list = Object.entries(msgs).sort(function (a, b) { return (a[1].ts || 0) - (b[1].ts || 0); });
     var html = '';
-    list.forEach(function (m) {
+    list.forEach(function (entry) {
+      var m       = entry[1];
       var isAdmin = m.from === 'admin' || m.role === 'admin' || m.role === 'programador';
-      var bg      = isAdmin ? '#0f3320' : '#f3f4f6';
+      var bg      = isAdmin ? '#0f3320' : '#fff';
       var col     = isAdmin ? '#fff'    : '#111827';
+      var border  = isAdmin ? '' : 'border:1.5px solid #e5e7eb;';
       var align   = isAdmin ? 'flex-end' : 'flex-start';
       html +=
         '<div style="display:flex;justify-content:' + align + '">' +
-          '<div style="max-width:80%;padding:10px 13px;background:' + bg + ';color:' + col + ';border-radius:12px;font-size:13px;line-height:1.4">' +
+          '<div style="max-width:82%;padding:10px 13px;background:' + bg + ';color:' + col + ';border-radius:12px;font-size:13px;line-height:1.5;' + border + 'box-shadow:0 1px 3px rgba(0,0,0,.07)">' +
             '<div>' + _escAdmin(m.text || m.mensaje || '') + '</div>' +
-            '<div style="font-size:10px;opacity:.6;margin-top:4px;text-align:right">' + _escAdmin(m.nombre || (isAdmin ? 'Admin' : 'Cliente')) + ' · ' + fmtDate(m.ts) + '</div>' +
+            '<div style="font-size:10px;opacity:.55;margin-top:5px;text-align:right">' + _escAdmin(m.nombre || (isAdmin ? 'Admin' : 'Cliente')) + ' · ' + fmtDate(m.ts) + '</div>' +
           '</div>' +
         '</div>';
     });
@@ -2113,26 +2282,22 @@
     var input = document.getElementById('admin-chat-input');
     var text  = input ? input.value.trim() : '';
     if (!text || !_adminCurrentClient) return;
-
     var clientKey = _fsKeyAdmin(_adminCurrentClient);
-    var role      = (window.APP && window.APP.activeRole) || 'admin';
-    var nombre    = (window.APP && (window.APP.activeEngineer || window.APP.userName)) || 'Admin';
-    var msg       = { text: text, from: 'admin', role: role, nombre: nombre, ts: Date.now() };
-
+    var role   = (window.APP && (window.APP.userRole || window.APP.activeRole)) || 'admin';
+    var nombre = (window.APP && (window.APP.activeEngineer || window.APP.userName)) || 'Admin';
+    var msg    = { text: text, from: 'admin', role: role, nombre: nombre, ts: Date.now() };
     if (typeof window._fbSendMessage === 'function') window._fbSendMessage(clientKey, msg);
     if (input) input.value = '';
   };
 
-  /* ── CUENTA TAB ── */
+  /* ═══ TAB: CUENTA ═══ */
   function _renderAdminCuenta(content) {
-    content.innerHTML = '<div style="flex:1;padding:16px"><div style="text-align:center;padding:20px;color:#9ca3af;font-size:13px">⏳ Buscando cuenta vinculada...</div></div>';
-
+    content.style.display = 'block';
+    content.innerHTML = '<div style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">⏳ Buscando cuenta vinculada...</div>';
     if (typeof window._fbGetAllUsers === 'function') {
       window._fbGetAllUsers().then(function (users) {
         _renderAdminCuentaContent(content, users);
-      }).catch(function () {
-        _renderAdminCuentaContent(content, null);
-      });
+      }).catch(function () { _renderAdminCuentaContent(content, null); });
     } else {
       _renderAdminCuentaContent(content, null);
     }
@@ -2141,114 +2306,139 @@
   function _renderAdminCuentaContent(content, users) {
     var clientName = _adminCurrentClient;
     var linkedUser = null;
-
     if (users) {
       Object.keys(users).forEach(function (uid) {
         var u = users[uid];
         if (u.role === 'cliente' && (u.clienteAsignado || '').toLowerCase().trim() === clientName.toLowerCase().trim()) {
-          linkedUser = Object.assign({ _uid: uid }, u);
+          if (!linkedUser) linkedUser = Object.assign({ _uid: uid }, u);
         }
       });
     }
 
-    var html = '<div style="flex:1;padding:16px">';
+    var html = '<div style="padding:16px 16px 80px">';
 
     if (linkedUser) {
       var isActive = linkedUser.activo !== false;
       html +=
         '<div style="background:#f0fdf4;border:2px solid #22c55e;border-radius:16px;padding:16px;margin-bottom:16px">' +
-          '<div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">✅ Cuenta de portal activa</div>' +
-          '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' +
-            '<div style="width:44px;height:44px;border-radius:12px;background:#0f3320;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">🏢</div>' +
-            '<div>' +
-              '<div style="font-weight:700;font-size:15px;color:#111827">' + _escAdmin(linkedUser.nombre || 'Sin nombre') + '</div>' +
-              '<div style="font-size:12px;color:#6b7280">' + _escAdmin(linkedUser.email || '') + '</div>' +
+          '<div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">✅ Cuenta de portal activa</div>' +
+          '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
+            '<div style="width:50px;height:50px;border-radius:14px;background:linear-gradient(135deg,#0f3320,#22c55e);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">🏢</div>' +
+            '<div style="min-width:0">' +
+              '<div style="font-weight:700;font-size:16px;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _escAdmin(linkedUser.nombre || 'Sin nombre') + '</div>' +
+              '<div style="font-size:12px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _escAdmin(linkedUser.email || '') + '</div>' +
+              '<div style="font-size:11px;color:#9ca3af;margin-top:2px">Asignado a: ' + _escAdmin(linkedUser.clienteAsignado || clientName) + '</div>' +
             '</div>' +
           '</div>' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-            '<span style="padding:3px 10px;background:' + (isActive ? '#dcfce7' : '#fee2e2') + ';color:' + (isActive ? '#15803d' : '#b91c1c') + ';border-radius:20px;font-size:11px;font-weight:700">' + (isActive ? '● Activo' : '○ Inactivo') + '</span>' +
-            '<span style="padding:3px 10px;background:#eff6ff;color:#1d4ed8;border-radius:20px;font-size:11px;font-weight:700">🏢 Cliente</span>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">' +
+            '<span style="padding:3px 12px;background:' + (isActive ? '#dcfce7' : '#fee2e2') + ';color:' + (isActive ? '#15803d' : '#b91c1c') + ';border-radius:20px;font-size:11px;font-weight:700">' + (isActive ? '● Activo' : '○ Inactivo') + '</span>' +
+            '<span style="padding:3px 12px;background:#eff6ff;color:#1d4ed8;border-radius:20px;font-size:11px;font-weight:700">🏢 Rol: Cliente</span>' +
           '</div>' +
-        '</div>' +
-        '<div style="display:flex;gap:8px">' +
-          '<button onclick="window.toggleUserActive(\'' + linkedUser._uid + '\',' + (isActive ? 'false' : 'true') + ');window.dbAdminTab(\'cuenta\')" ' +
-            'style="flex:1;padding:11px;background:' + (isActive ? '#fff1f2' : '#f0fdf4') + ';color:' + (isActive ? '#b91c1c' : '#15803d') + ';border:1.5px solid ' + (isActive ? '#fecdd3' : '#86efac') + ';border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">' +
-            (isActive ? '🔒 Desactivar' : '✅ Activar') + '</button>' +
-          '<button onclick="window.changeUserPassword && window.changeUserPassword(\'' + linkedUser._uid + '\',\'' + _escAdmin(linkedUser.email || '') + '\')" ' +
-            'style="padding:11px 16px;background:#f8f4ee;border:1.5px solid #d4cfc5;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;color:#6b6560">🔑 Cambiar clave</button>' +
+          '<div style="display:flex;gap:8px">' +
+            '<button onclick="window.toggleUserActive(\'' + linkedUser._uid + '\',' + (!isActive) + ');setTimeout(function(){window.dbAdminTab(\'cuenta\')},800)" ' +
+              'style="flex:1;padding:11px;background:' + (isActive ? '#fff1f2' : '#f0fdf4') + ';color:' + (isActive ? '#b91c1c' : '#15803d') + ';border:1.5px solid ' + (isActive ? '#fecdd3' : '#86efac') + ';border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">' +
+              (isActive ? '🔒 Desactivar acceso' : '✅ Activar acceso') + '</button>' +
+            '<button onclick="window.changeUserPassword && window.changeUserPassword(\'' + linkedUser._uid + '\',\'' + _escAdmin(linkedUser.email || '') + '\')" ' +
+              'style="padding:11px 16px;background:#f8f4ee;border:1.5px solid #d4cfc5;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif;color:#6b6560">🔑 Cambiar clave</button>' +
+          '</div>' +
         '</div>';
+
+      html +=
+        '<div style="background:#f8f7f4;border-radius:12px;padding:14px">' +
+          '<div style="font-size:12px;font-weight:700;color:#0f3320;margin-bottom:6px">ℹ️ Sobre el portal del cliente</div>' +
+          '<div style="font-size:12px;color:#6b7280;line-height:1.7">El cliente entra con su correo y contraseña. Solo verá los árboles y documentos que configures en la pestaña <strong>👁️ Portal</strong>. Puede enviarte mensajes desde la pestaña <strong>💬 Chat</strong>.</div>' +
+        '</div>';
+
     } else {
       html +=
         '<div style="background:#fefce8;border:2px solid #fde047;border-radius:16px;padding:20px;margin-bottom:16px;text-align:center">' +
-          '<div style="font-size:36px;margin-bottom:10px">🏢</div>' +
-          '<div style="font-size:16px;font-weight:700;color:#854d0e;margin-bottom:6px">Sin cuenta de acceso</div>' +
-          '<div style="font-size:13px;color:#78350f;margin-bottom:16px;line-height:1.5">' + _escAdmin(clientName) + ' no tiene cuenta de portal. Crea una para que el cliente pueda ingresar a su espacio.</div>' +
-          '<button onclick="window._adminCreateClientAccount(\'' + encodeURIComponent(clientName) + '\')" ' +
-            'style="padding:12px 24px;background:#0f3320;color:#fff;border:none;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">➕ Crear cuenta de cliente</button>' +
+          '<div style="font-size:40px;margin-bottom:12px">🏢</div>' +
+          '<div style="font-size:16px;font-weight:700;color:#854d0e;margin-bottom:8px">Sin cuenta de portal</div>' +
+          '<div style="font-size:13px;color:#78350f;margin-bottom:18px;line-height:1.5">' + _escAdmin(clientName) + ' no tiene cuenta. Crea una para que el cliente pueda acceder a su portal con correo y contraseña.</div>' +
+        '</div>';
+
+      // Inline creation form
+      html +=
+        '<div style="background:#fff;border:1.5px solid #e5e7eb;border-radius:16px;padding:16px;margin-bottom:14px">' +
+          '<div style="font-size:13px;font-weight:700;color:#0f3320;margin-bottom:14px">➕ Crear cuenta de cliente</div>' +
+          '<input type="text" id="acc-nombre" placeholder="Nombre completo *" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d4cfc5;border-radius:10px;font-family:\'IBM Plex Sans\',sans-serif;font-size:13px;outline:none;background:#faf9f5;margin-bottom:8px">' +
+          '<input type="email" id="acc-email" placeholder="correo@empresa.com *" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d4cfc5;border-radius:10px;font-family:\'IBM Plex Sans\',sans-serif;font-size:13px;outline:none;background:#faf9f5;margin-bottom:8px">' +
+          '<input type="password" id="acc-pass" placeholder="Contraseña (mínimo 6 caracteres) *" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d4cfc5;border-radius:10px;font-family:\'IBM Plex Sans\',sans-serif;font-size:13px;outline:none;background:#faf9f5;margin-bottom:8px">' +
+          '<div style="background:#f0fdf4;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#15803d"><strong>Cliente asignado:</strong> ' + _escAdmin(clientName) + '</div>' +
+          '<div id="acc-error" style="display:none;background:#fee2e2;color:#b91c1c;border-radius:8px;padding:8px 10px;font-size:12px;font-weight:600;margin-bottom:8px"></div>' +
+          '<button id="acc-create-btn" onclick="window.dbAdminCreateAccount(\'' + encodeURIComponent(clientName) + '\')" style="width:100%;padding:12px;background:#0f3320;color:#fff;border:none;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;font-family:\'IBM Plex Sans\',sans-serif">✅ Crear cuenta</button>' +
+        '</div>';
+
+      html +=
+        '<div style="background:#f8f7f4;border-radius:12px;padding:14px">' +
+          '<div style="font-size:12px;font-weight:700;color:#0f3320;margin-bottom:6px">ℹ️ ¿Cómo funciona?</div>' +
+          '<div style="font-size:12px;color:#6b7280;line-height:1.7">Al crear la cuenta, el cliente puede ingresar a la app con su correo y contraseña. Verá únicamente lo que hayas configurado en <strong>👁️ Portal</strong>.</div>' +
         '</div>';
     }
-
-    html +=
-      '<div style="background:#f8f7f4;border-radius:12px;padding:14px;margin-top:8px">' +
-        '<div style="font-size:12px;font-weight:700;color:#0f3320;margin-bottom:8px">ℹ️ ¿Cómo funciona el portal?</div>' +
-        '<div style="font-size:12px;color:#6b7280;line-height:1.7">' +
-          'El cliente ingresa con su correo y contraseña. Ve únicamente los árboles y documentos que hayas configurado en la pestaña <strong>👁️ Portal</strong>. También puede enviar consultas por el chat.' +
-        '</div>' +
-      '</div>';
 
     html += '</div>';
     content.innerHTML = html;
   }
 
-  window._adminCreateClientAccount = function (encName) {
+  /* ── Inline account creation ── */
+  window.dbAdminCreateAccount = async function (encName) {
     var clientName = decodeURIComponent(encName);
-    if (typeof window.showAdminPanel === 'function') {
-      window.showAdminPanel();
-      setTimeout(function () {
-        var roleSelect = document.getElementById('newUserRole');
-        var clienteInput = document.getElementById('newUserClienteAsignado');
-        if (roleSelect) { roleSelect.value = 'cliente'; window._toggleClienteField && window._toggleClienteField(); }
-        if (clienteInput) clienteInput.value = clientName;
-        window.showCreateUserForm && window.showCreateUserForm();
-      }, 400);
-    } else {
-      showNotif('Abre el Panel de Admin → Nueva cuenta → selecciona "🏢 Cliente"', 'info');
+    var nombre = (document.getElementById('acc-nombre') ? document.getElementById('acc-nombre').value : '').trim();
+    var email  = (document.getElementById('acc-email')  ? document.getElementById('acc-email').value  : '').trim().toLowerCase();
+    var pass   = (document.getElementById('acc-pass')   ? document.getElementById('acc-pass').value   : '');
+    var errEl  = document.getElementById('acc-error');
+    var btn    = document.getElementById('acc-create-btn');
+
+    if (errEl) errEl.style.display = 'none';
+    if (!nombre || !email || !pass) { if (errEl) { errEl.textContent = 'Completa todos los campos obligatorios.'; errEl.style.display = 'block'; } return; }
+    if (pass.length < 6) { if (errEl) { errEl.textContent = 'La contraseña debe tener al menos 6 caracteres.'; errEl.style.display = 'block'; } return; }
+    if (!email.includes('@')) { if (errEl) { errEl.textContent = 'Ingresa un correo válido.'; errEl.style.display = 'block'; } return; }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
+    try {
+      var salt = window._generateSalt();
+      var hash = await window._hashPassword(pass, salt);
+      var uid  = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      var userData = {
+        nombre: nombre, email: email, role: 'cliente',
+        salt: salt, passwordHash: hash,
+        activo: true, clientesPermitidos: [],
+        clienteAsignado: clientName,
+        creadoPor: (window._AUTH && window._AUTH.currentUser) ? window._AUTH.currentUser.uid : null,
+        creadoEn: Date.now()
+      };
+      await window._fbSaveUser(uid, userData);
+      showNotif('✅ Cuenta creada para ' + clientName);
+      window.dbAdminTab('cuenta');
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = '✅ Crear cuenta'; }
+      if (errEl) { errEl.textContent = e.message || 'Error al crear la cuenta.'; errEl.style.display = 'block'; }
     }
   };
 
   /* ══════════════════════════════════════════════════════════
-     BUG REPORT SYSTEM
+     BUG REPORT SYSTEM (shake-triggered only)
   ══════════════════════════════════════════════════════════ */
   window.openReportModal = function () {
-    var modal  = document.getElementById('reportModal');
+    var modal = document.getElementById('reportModal');
     if (!modal) return;
     modal.style.display = 'flex';
 
-    // Detect current screen
-    var screenNames = {
-      viewHome: '🏠 Inicio (Mapa principal)',
-      viewDB:   '🗂️ Registros',
-      viewForm: '📋 Formulario ISA',
-      viewMap:  '🗺️ Mapa'
-    };
+    var screenNames = { viewHome: '🏠 Inicio', viewDB: '🗂️ Registros', viewForm: '📋 Formulario', viewMap: '🗺️ Mapa' };
     var currentScreen = 'Desconocida';
     ['viewHome', 'viewDB', 'viewForm', 'viewMap'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && el.classList.contains('active')) currentScreen = screenNames[id] || id;
     });
-
-    // Detect admin section
     var admDetail = document.getElementById('db-admin-detail-wrap');
-    if (admDetail && admDetail.style.display !== 'none') {
-      currentScreen = '🏢 Admin Clientes — ' + (_adminCurrentClient || '');
-    }
+    if (admDetail && admDetail.style.display !== 'none') currentScreen = '🏢 Admin — ' + (_adminCurrentClient || '');
 
     var label = document.getElementById('report-screen-label');
     if (label) label.textContent = 'Pantalla detectada: ' + currentScreen;
     window._reportCurrentScreen = currentScreen;
 
     var desc = document.getElementById('report-desc');
-    if (desc) { desc.value = ''; desc.focus(); }
+    if (desc) { desc.value = ''; setTimeout(function () { desc.focus(); }, 200); }
     var sec = document.getElementById('report-section');
     if (sec) sec.value = '';
   };
@@ -2263,54 +2453,43 @@
     var sec  = document.getElementById('report-section');
     var text = desc ? desc.value.trim() : '';
     if (!text) { showNotif('⚠️ Describe el problema antes de enviar', 'warning'); return; }
-
     var report = {
       description: text,
       section:     sec ? (sec.value || 'sin especificar') : 'sin especificar',
       screen:      window._reportCurrentScreen || 'desconocida',
       evaluador:   (window.APP && window.APP.activeEngineer) || 'desconocido',
-      role:        (window.APP && window.APP.activeRole)     || 'desconocido',
-      ts:          Date.now(),
-      resolved:    false
+      role:        (window.APP && (window.APP.userRole || window.APP.activeRole)) || 'desconocido',
+      ts:          Date.now(), resolved: false
     };
-
     if (typeof window._fbPushReport === 'function') {
       window._fbPushReport(report)
-        .then(function () {
-          window.closeReportModal();
-          showNotif('✅ Reporte enviado — gracias por tu feedback');
-        })
-        .catch(function (e) {
-          showNotif('❌ Error al enviar: ' + (e.message || 'desconocido'));
-        });
+        .then(function () { window.closeReportModal(); showNotif('✅ Reporte enviado — gracias'); })
+        .catch(function (e) { showNotif('❌ Error: ' + (e.message || '')); });
     } else {
-      // Fallback: store locally
       var stored = JSON.parse(localStorage.getItem('bu_reports') || '[]');
       stored.push(report);
       localStorage.setItem('bu_reports', JSON.stringify(stored));
       window.closeReportModal();
-      showNotif('✅ Reporte guardado localmente');
+      showNotif('✅ Reporte guardado');
     }
   };
 
   // Shake to report
   (function () {
-    var _lastShake   = 0;
-    var _shakeCount  = 0;
-    var _shakeTimer  = null;
+    var _lastShake  = 0;
+    var _shakeCount = 0;
+    var _shakeTimer = null;
     window.addEventListener('devicemotion', function (e) {
       var acc = e.acceleration || e.accelerationIncludingGravity;
       if (!acc) return;
       var mag = Math.sqrt((acc.x || 0) * (acc.x || 0) + (acc.y || 0) * (acc.y || 0) + (acc.z || 0) * (acc.z || 0));
-      // For accelerationIncludingGravity subtract ~9.8
       if (!e.acceleration) mag = Math.abs(mag - 9.8);
       if (mag > 18) {
         _shakeCount++;
         clearTimeout(_shakeTimer);
         _shakeTimer = setTimeout(function () { _shakeCount = 0; }, 1000);
         if (_shakeCount >= 3 && Date.now() - _lastShake > 4000) {
-          _lastShake  = Date.now();
-          _shakeCount = 0;
+          _lastShake = Date.now(); _shakeCount = 0;
           window.openReportModal && window.openReportModal();
         }
       }

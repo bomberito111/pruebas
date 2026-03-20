@@ -17,10 +17,11 @@ window.switchTab = function (tab) {
   // Show / hide views
   var viewIds = ['viewHome', 'viewMap', 'viewDB', 'viewForm'];
   var targetViewId = {
-    home: 'viewHome',
-    map:  'viewMap',
-    db:   'viewDB',
-    form: 'viewForm'
+    home:  'viewHome',
+    map:   'viewMap',
+    db:    'viewDB',
+    admin: 'viewDB',
+    form:  'viewForm'
   }[tab];
 
   viewIds.forEach(function (id) {
@@ -65,9 +66,48 @@ window.switchTab = function (tab) {
     window._dbCheckAdminTabBar && window._dbCheckAdminTabBar();
   }
 
+  if (tab === 'admin') {
+    var lv1a = document.getElementById('db-level-1');
+    var lv2a = document.getElementById('db-level-2');
+    var lv3a = document.getElementById('db-level-3');
+    var aList = document.getElementById('db-admin-list-wrap');
+    var aDet  = document.getElementById('db-admin-detail-wrap');
+    if (lv1a) lv1a.style.display = 'none';
+    if (lv2a) lv2a.style.display = 'none';
+    if (lv3a) lv3a.style.display = 'none';
+    if (aList) aList.style.display = 'flex';
+    if (aDet)  aDet.style.display  = 'none';
+    window._dbCheckAdminTabBar && window._dbCheckAdminTabBar();
+    setTimeout(function () {
+      // force 'admin' sub-tab active styling
+      var tabR = document.getElementById('db-tab-records');
+      var tabA = document.getElementById('db-tab-admin');
+      if (tabR) { tabR.style.borderBottom = '2.5px solid transparent'; tabR.style.color = '#9ca3af'; tabR.style.fontWeight = '600'; }
+      if (tabA) { tabA.style.borderBottom = '2.5px solid #0f3320';     tabA.style.color = '#0f3320'; tabA.style.fontWeight = '700'; }
+      window.dbRenderAdminClients && window.dbRenderAdminClients();
+    }, 50);
+  }
+
   if (tab === 'form') {
     // Form view is already shown, nothing extra needed
   }
+};
+
+/* ── Apply role-based navigation UI ── */
+window._applyRoleNav = function () {
+  var role = (window.APP && (window.APP.userRole || window.APP.activeRole)) || '';
+  var isAdmin = role === 'admin' || role === 'programador';
+
+  // Show/hide admin nav tab
+  var adminNavBtn = document.getElementById('tab-admin');
+  if (adminNavBtn) adminNavBtn.style.display = isAdmin ? '' : 'none';
+
+  // Show/hide report bug button (always hidden — shake only)
+  var reportBtn = document.getElementById('reportBugBtn');
+  if (reportBtn) reportBtn.style.display = 'none';
+
+  // Update admin tab bar visibility in records view
+  window._dbCheckAdminTabBar && window._dbCheckAdminTabBar();
 };
 
 window.closeFormView = function () {

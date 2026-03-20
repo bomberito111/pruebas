@@ -156,6 +156,10 @@ window.hideLoginScreen = function () {
   var app = document.getElementById('app');
   if (ls)  ls.style.display  = 'none';
   if (app) app.style.display = 'flex';
+  // Apply role-based UI (admin nav tab etc.)
+  setTimeout(function () {
+    window._applyRoleNav && window._applyRoleNav();
+  }, 200);
 };
 
 /* ─────────────────────────────────────────
