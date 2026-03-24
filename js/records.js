@@ -1064,8 +1064,91 @@
   };
 
   // ─────────────────────────────────────────
-  // TREE DETAIL MODAL
+  // TREE DETAIL MODAL — helper functions for ISA matrices
   // ─────────────────────────────────────────
+
+  // Normalize string value to lowercase key (e.g. "Muy bajo" → "muy_bajo")
+  function _dtNorm(s) {
+    if (!s) return '';
+    return String(s).toLowerCase().trim().replace(/\s+/g,'_').replace('severa','severo');
+  }
+
+  // Background colour for M1 probability level
+  function _dtProbBg(level) {
+    return ({improbable:'#dcfce7',algo_probable:'#fef9c3',probable:'#fed7aa',muy_probable:'#fecaca'})[level] || '#f3f4f6';
+  }
+
+  // Background colour for final risk level
+  function _dtRiskBg(level) {
+    return ({bajo:'#dcfce7',moderado:'#fef9c3',alto:'#fed7aa',extremo:'#fecaca'})[level] || '#f3f4f6';
+  }
+
+  // Render ISA TRAQ Matrix M1 (Prob. fallo × Impacto) with active cell highlighted
+  function _dtRenderM1(fKey, iKey) {
+    var f = _dtNorm(fKey), i = _dtNorm(iKey);
+    var M1 = {
+      inminente:  {muy_bajo:'improbable',bajo:'algo_probable',medio:'probable',      alto:'muy_probable'},
+      probable:   {muy_bajo:'improbable',bajo:'improbable',   medio:'algo_probable', alto:'probable'},
+      posible:    {muy_bajo:'improbable',bajo:'improbable',   medio:'improbable',    alto:'algo_probable'},
+      improbable: {muy_bajo:'improbable',bajo:'improbable',   medio:'improbable',    alto:'improbable'}
+    };
+    var PL = {improbable:'Improbable',algo_probable:'Algo probable',probable:'Probable',muy_probable:'Muy probable'};
+    var ROWS = ['inminente','probable','posible','improbable'];
+    var COLS = ['muy_bajo','bajo','medio','alto'];
+    var RL = {inminente:'Inminente',probable:'Probable',posible:'Posible',improbable:'Improbable'};
+    var CL = {muy_bajo:'Muy bajo',bajo:'Bajo',medio:'Medio',alto:'Alto'};
+    var TH = 'font-size:9px;font-weight:700;color:#374151;background:#f9fafb;padding:5px 6px;border:1px solid #d1d5db;text-align:center;white-space:nowrap;';
+    var s = '<div style="overflow-x:auto;margin:0 0 4px;"><table style="width:100%;border-collapse:collapse;font-size:9.5px;">';
+    s += '<tr><th style="'+TH+'">↓ Fallo / Impacto →</th>';
+    COLS.forEach(function(c){s+='<th style="'+TH+'">'+CL[c]+'</th>';});
+    s += '</tr>';
+    ROWS.forEach(function(r){
+      s += '<tr><th style="'+TH+'text-align:left;font-weight:700;">'+RL[r]+'</th>';
+      COLS.forEach(function(c){
+        var prob=(M1[r]||{})[c]||'improbable';
+        var active=(r===f&&c===i);
+        s += '<td style="padding:5px 6px;border:1px solid #d1d5db;text-align:center;background:'+_dtProbBg(prob)+';'+
+          (active?'outline:3px solid #1d4ed8;outline-offset:-2px;font-weight:900;font-size:10px;':'')+'">'+
+          PL[prob]+(active?' ★':'')+'</td>';
+      });
+      s += '</tr>';
+    });
+    return s + '</table></div>';
+  }
+
+  // Render ISA TRAQ Matrix M2 (Prob. combinada × Consecuencia) with active cell highlighted
+  function _dtRenderM2(probCombKey, consecKey) {
+    var p = _dtNorm(probCombKey), c = _dtNorm(consecKey);
+    var M2 = {
+      muy_probable:  {insignificante:'bajo',menor:'moderado',significativa:'alto',   severo:'extremo'},
+      probable:      {insignificante:'bajo',menor:'moderado',significativa:'alto',   severo:'alto'},
+      algo_probable: {insignificante:'bajo',menor:'bajo',    significativa:'moderado',severo:'moderado'},
+      improbable:    {insignificante:'bajo',menor:'bajo',    significativa:'bajo',   severo:'bajo'}
+    };
+    var RKL = {bajo:'Bajo',moderado:'Moderado',alto:'Alto',extremo:'Extremo'};
+    var ROWS = ['muy_probable','probable','algo_probable','improbable'];
+    var COLS = ['insignificante','menor','significativa','severo'];
+    var ROWL = {muy_probable:'Muy probable',probable:'Probable',algo_probable:'Algo probable',improbable:'Improbable'};
+    var COLL = {insignificante:'Insignif.',menor:'Menor',significativa:'Signif.',severo:'Severa'};
+    var TH = 'font-size:9px;font-weight:700;color:#374151;background:#f9fafb;padding:5px 6px;border:1px solid #d1d5db;text-align:center;white-space:nowrap;';
+    var s = '<div style="overflow-x:auto;margin:0 0 4px;"><table style="width:100%;border-collapse:collapse;font-size:9.5px;">';
+    s += '<tr><th style="'+TH+'">↓ Prob. comb. / Consec. →</th>';
+    COLS.forEach(function(col){s+='<th style="'+TH+'">'+COLL[col]+'</th>';});
+    s += '</tr>';
+    ROWS.forEach(function(r){
+      s += '<tr><th style="'+TH+'text-align:left;font-weight:700;">'+ROWL[r]+'</th>';
+      COLS.forEach(function(col){
+        var risk=(M2[r]||{})[col]||'bajo';
+        var active=(r===p&&col===c);
+        s += '<td style="padding:5px 6px;border:1px solid #d1d5db;text-align:center;background:'+_dtRiskBg(risk)+';color:#111;'+
+          (active?'outline:3px solid #1d4ed8;outline-offset:-2px;font-weight:900;font-size:10px;':'')+'">'+
+          RKL[risk]+(active?' ★':'')+'</td>';
+      });
+      s += '</tr>';
+    });
+    return s + '</table></div>';
+  }
+
   window.showTreeDetail = function (key) {
     var db = window._dbAll || {};
     var ev = db[key];
@@ -1229,26 +1312,40 @@
           return;
         }
 
-        // Compute display value — always show something
+        // Compute display value — arrays (multi) → colored badges
         var displayVal;
+        var isBadges = false;
         if (val === null || val === undefined || val === '') {
           displayVal = '—';
         } else if (Array.isArray(val)) {
-          displayVal = val.length > 0 ? val.join(', ') : '—';
+          if (val.length > 0) {
+            isBadges = true;
+            displayVal = val.map(function(item) {
+              var none = ['Sin defectos','Ninguno','No conocido'].indexOf(item) !== -1;
+              var bg = none ? '#f0fdf4' : '#fff7ed';
+              var col = none ? '#15803d' : '#c2410c';
+              var border = none ? '#86efac' : '#fed7aa';
+              return '<span style="display:inline-block;padding:2px 8px;margin:2px 2px;background:' + bg + ';color:' + col + ';border:1px solid ' + border + ';border-radius:20px;font-size:10px;font-weight:700;">' + item + '</span>';
+            }).join('');
+          } else {
+            displayVal = '—';
+          }
         } else {
           displayVal = String(val);
         }
         phContent +=
-          '<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid #f5f0e8;">' +
-            '<span style="flex:0 0 44%;font-size:11px;font-weight:700;color:#7a746e;padding-right:8px;">' + q.label + '</span>' +
-            '<span style="flex:1;font-size:12px;font-weight:600;color:' + (displayVal === '—' ? '#c0bbb5' : '#1a1a1a') + ';word-break:break-word;">' + displayVal + '</span>' +
+          '<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid #f5f0e8;' + (isBadges ? 'flex-direction:column;' : '') + '">' +
+            '<span style="' + (isBadges ? '' : 'flex:0 0 44%;') + 'font-size:11px;font-weight:700;color:#7a746e;padding-right:8px;">' + q.label + '</span>' +
+            (isBadges
+              ? '<div style="display:flex;flex-wrap:wrap;gap:2px;">' + displayVal + '</div>'
+              : '<span style="flex:1;font-size:12px;font-weight:600;color:' + (displayVal === '—' ? '#c0bbb5' : '#1a1a1a') + ';word-break:break-word;">' + displayVal + '</span>') +
           '</div>';
       });
 
       if (phContent) html += section(phTitle, phContent, phaseInfo.icon);
     });
 
-    // ═══ 6. DIANA GROUPS — full detail ═══
+    // ═══ 6. DIANA GROUPS — detalle completo con matrices M1/M2 ═══
     var dianaGroups = [
       { key: 'copa_dianas',   label: 'Dianas Copa',   icon: '🌿' },
       { key: 'tronco_dianas', label: 'Dianas Tronco', icon: '🪵' },
@@ -1261,16 +1358,42 @@
       arr.forEach(function(d, idx) {
         var dr  = d.riesgo || 'bajo';
         var dc  = getRiskColor(dr);
+        var fKey      = d.fallo || d.prob_fallo || '';
+        var iKey      = d.impacto || '';
+        var consecStr = d.consec || d.consecuencia || '';
+        var probCombKey = d.probComb || '';
+
         dContent +=
-          '<div style="border:1.5px solid ' + dc + ';border-radius:9px;background:' + dc + '0f;padding:10px 12px;margin-bottom:8px;">' +
-            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">' +
+          '<div style="border:1.5px solid ' + dc + ';border-radius:10px;background:' + dc + '0f;padding:11px 13px;margin-bottom:10px;">' +
+            // ── Cabecera: nombre diana + badge riesgo ──
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">' +
               '<span style="font-size:12px;font-weight:800;color:#1a1a1a;">' + dg.icon + ' ' + safeVal(d.diana || d.ocupacion || ('Diana ' + (idx+1))) + '</span>' +
-              '<span style="font-size:10px;font-weight:800;text-transform:uppercase;color:#fff;background:' + dc + ';padding:2px 10px;border-radius:20px;">' + getRiskLabel(dr) + '</span>' +
+              '<span style="font-size:10px;font-weight:800;text-transform:uppercase;color:#fff;background:' + dc + ';padding:3px 10px;border-radius:20px;">' + getRiskLabel(dr) + '</span>' +
             '</div>' +
-            (d.prob_fallo   ? '<div style="font-size:11px;color:#374151;margin-bottom:2px;"><strong>Prob. fallo:</strong> ' + d.prob_fallo   + '</div>' : '') +
-            (d.impacto      ? '<div style="font-size:11px;color:#374151;margin-bottom:2px;"><strong>Impacto:</strong> '      + d.impacto      + '</div>' : '') +
-            (d.conseq || d.consecuencia ? '<div style="font-size:11px;color:#374151;margin-bottom:2px;"><strong>Consecuencia:</strong> ' + safeVal(d.conseq || d.consecuencia) + '</div>' : '') +
-            (d.probComb     ? '<div style="font-size:11px;color:#374151;"><strong>Prob. combinada:</strong> '  + d.probComb     + '</div>' : '') +
+            // ── Descripción si existe ──
+            (d.desc ? '<div style="font-size:11px;color:#374151;margin-bottom:6px;font-style:italic;">"' + safeVal(d.desc) + '"</div>' : '') +
+            // ── Metadatos de diana (ocupación, ubicación, movilidad, restricción) ──
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin-bottom:8px;">' +
+              (d.ocup ? '<div style="font-size:10px;color:#374151;"><strong>Ocupación:</strong> ' + safeVal(d.ocup) + '</div>' : '') +
+              (d.ubic ? '<div style="font-size:10px;color:#374151;"><strong>Ubicación:</strong> ' + safeVal(d.ubic) + '</div>' : '') +
+              (d.mov  !== undefined && d.mov !== '' ? '<div style="font-size:10px;color:#374151;"><strong>Movilidad:</strong> ' + safeVal(d.mov) + '</div>' : '') +
+              (d.rest !== undefined && d.rest !== '' ? '<div style="font-size:10px;color:#374151;"><strong>Restricción:</strong> ' + safeVal(d.rest) + '</div>' : '') +
+            '</div>' +
+            // ── Matriz M1: Prob. fallo × Impacto ──
+            (fKey
+              ? '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin:6px 0 2px;">📊 Matriz M1 — Prob. de fallo × Impacto</div>' +
+                _dtRenderM1(fKey, iKey)
+              : '<div style="font-size:10px;color:#9ca3af;margin:4px 0;">— Matriz M1 no disponible (evaluación sin datos de fallo)</div>') +
+            // ── Matriz M2: Prob. combinada × Consecuencia ──
+            (probCombKey
+              ? '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin:6px 0 2px;">📊 Matriz M2 — Prob. combinada × Consecuencia</div>' +
+                _dtRenderM2(probCombKey, consecStr)
+              : '') +
+            // ── Resultado final ──
+            '<div style="margin-top:8px;padding:8px 12px;background:' + dc + ';border-radius:8px;display:flex;align-items:center;justify-content:space-between;">' +
+              '<span style="font-size:11px;font-weight:700;color:#fff;">Resultado final</span>' +
+              '<span style="font-size:15px;font-weight:900;color:#fff;text-transform:uppercase;letter-spacing:.04em;">' + getRiskLabel(dr) + '</span>' +
+            '</div>' +
           '</div>';
       });
       html += section(dg.label + ' (' + arr.length + ')', dContent, dg.icon);
@@ -1587,6 +1710,7 @@
     var file = files[0];
     var clienteId = (_docsClient || 'general').replace(/\s+/g, '_').toLowerCase();
 
+    showNotif('⏳ Subiendo documento…');
     window.FB.uploadDoc(clienteId, file)
       .then(function (result) {
         if (!result.ts) result.ts = Date.now();
@@ -1596,10 +1720,10 @@
           window._fbPushArchivo(clienteId, result);
         }
         _docsLocal.push(result);
-        showNotif('Documento subido', 'success');
+        showNotif('✅ Documento subido: ' + file.name);
         window.renderDocsModal();
       })
-      .catch(function (e) { showNotif('Error: ' + e.message, 'error'); });
+      .catch(function (e) { showNotif('❌ Error al subir: ' + (e.message || String(e))); });
 
     event.target.value = '';
   };

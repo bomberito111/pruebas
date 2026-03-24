@@ -160,8 +160,8 @@ body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--paper,#fa
       <div id="homeMapWrap">
         <div id="homeLeafletMap"></div>
 
-        <!-- ── COMPASS BAR (absolute over map, FONDO — no tapa overlay superior) ── -->
-        <div id="compassBarWrap" style="position:absolute;bottom:0;left:0;right:0;height:28px;background:rgba(10,36,16,.88);backdrop-filter:blur(4px);overflow:hidden;z-index:490;display:none;pointer-events:none;">
+        <!-- ── COMPASS BAR (absolute, encima de los botones inferiores) ── -->
+        <div id="compassBarWrap" style="position:absolute;bottom:118px;left:12px;right:12px;height:30px;background:rgba(10,36,16,.92);backdrop-filter:blur(6px);overflow:hidden;z-index:490;display:none;pointer-events:none;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.3);">
           <div id="compassTape" style="position:absolute;top:0;height:100%;display:flex;align-items:center;will-change:transform;"></div>
           <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;">
             <div style="width:2px;height:10px;background:#86efac;border-radius:1px 1px 0 0;"></div>
@@ -742,6 +742,14 @@ body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--paper,#fa
       <button onclick="dbExportDocsPDF()" style="flex:1;padding:8px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif">📄 Exportar PDF</button>
     </div>
     <div style="padding:14px 18px 28px" id="docs-modal-list"></div>
+    <!-- Input permanente — no dinámico — para que funcione en iOS -->
+    <input type="file" id="doc-input-permanent" style="display:none;" onchange="handleDocUpload(event)" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.xls,.xlsx,.txt,.csv">
+    <!-- Botón de subir siempre visible en el pie del modal -->
+    <div style="padding:0 18px 24px;">
+      <button onclick="document.getElementById('doc-input-permanent').click()" style="width:100%;padding:14px;background:#0f3320;color:#fff;border:none;border-radius:12px;font-weight:800;font-size:14px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:9px;">
+        <span style="font-size:20px">📎</span> Subir documento
+      </button>
+    </div>
   </div>
 </div>
 

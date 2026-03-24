@@ -848,9 +848,10 @@
     var exp = document.getElementById('pcm-expand-' + ak);
     var sw  = document.getElementById('pcm-switch-' + ak);
     var ball = sw ? sw.querySelector('div') : null;
-    if (!cb || !exp) return;
+    if (!cb) return;
     var checked = cb.checked;
-    exp.style.display = checked ? 'block' : 'none';
+    // Toggle expand panel if it exists
+    if (exp) exp.style.display = checked ? 'block' : 'none';
     if (sw) sw.style.background = checked ? '#0f3320' : '#d1d5db';
     if (ball) ball.style.left = checked ? '22px' : '2px';
 
